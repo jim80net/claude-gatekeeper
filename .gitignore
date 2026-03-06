@@ -1,4 +1,5 @@
-bin/
+bin/*
+!bin/run.sh
 dist/
 *.exe
 .claude/settings.local.json
