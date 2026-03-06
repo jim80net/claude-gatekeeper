@@ -1,8 +1,12 @@
 version: 2
 
+before:
+  hooks:
+    - sed -i 's/"version":.*/"version": "{{ .Version }}",/' .claude-plugin/plugin.json
+
 builds:
   - main: ./cmd/claude-gatekeeper
-    binary: claude-gatekeeper
+    binary: bin/claude-gatekeeper
     env:
       - CGO_ENABLED=0
     goos:

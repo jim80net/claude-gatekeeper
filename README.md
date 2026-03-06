@@ -6,13 +6,11 @@ A fast PreToolUse permission hook for [Claude Code](https://claude.com/claude-co
 
 Claude Code's built-in permission globs (`Bash(git add:*)`) can't match env-prefixed commands like `FOO=bar git commit`, pipe chains, or complex argument patterns. Regex can.
 
-**claude-gatekeeper** evaluates every tool call against a layered set of regex rules and returns `allow`, `deny`, or abstains (passes to the user). **Deny always wins.**
+**claude-gatekeeper** evaluates every tool call against a layered set of regex rules and returns `allow`, `deny`, or abstains (passes to the user). **Deny always wins.** When a tool call is denied, Claude sees the reason and can adjust its approach.
 
 ## Install
 
-### As a Claude Code plugin (recommended)
-
-Build the binary and point Claude Code at the plugin directory:
+### As a Claude Code plugin
 
 ```bash
 git clone https://github.com/jim80net/claude-gatekeeper.git
@@ -23,40 +21,23 @@ claude --plugin-dir .
 
 ### From a GitHub release
 
-Download a pre-built archive from [Releases](https://github.com/jim80net/claude-gatekeeper/releases), extract it, and run:
+Download a pre-built archive from [Releases](https://github.com/jim80net/claude-gatekeeper/releases), extract it, and point Claude Code at the extracted directory:
 
 ```bash
 claude --plugin-dir /path/to/claude-gatekeeper
 ```
 
-### Standalone (without plugin system)
-
-If you prefer the standalone hook registration:
-
-```bash
-# From source
-go install github.com/jim80net/claude-gatekeeper/cmd/claude-gatekeeper@latest
-claude-gatekeeper setup
-
-# Or build locally
-git clone https://github.com/jim80net/claude-gatekeeper.git
-cd claude-gatekeeper
-make install
-```
-
-`make install` builds the binary, copies it to `~/.claude/hooks/`, and registers the PreToolUse hook in `~/.claude/settings.json` (with backup).
-
 ## How it works
 
-1. Claude Code invokes `claude-gatekeeper` before each tool call, sending JSON on stdin.
-2. The gatekeeper loads rules from:
+1. Claude Code invokes the gatekeeper before each tool call, sending JSON on stdin.
+2. Rules are loaded from:
    - **Embedded defaults** — safe out-of-the-box rules (see below)
    - **Global config** — `~/.claude/.gatekeeper.toml`
    - **Project config** — `.claude/gatekeeper.toml`
 3. Each rule has a `tool` regex (matched against the tool name) and an `input` regex (matched against the command/file path/URL).
-4. **Deny always wins**: if any deny rule matches, the call is blocked.
+4. **Deny always wins**: if any deny rule matches, the call is blocked and Claude is told why.
 5. If any allow rule matches (and no deny), the call is auto-approved.
-6. If nothing matches, the gatekeeper abstains and Claude Code prompts the user.
+6. If nothing matches, the gatekeeper abstains and Claude Code prompts you.
 
 ## Default rules
 
@@ -74,7 +55,17 @@ Out of the box, gatekeeper **denies**:
 
 And **allows**:
 
-git, gh, docker, python toolchain (uv/pip/pytest), safe shell utilities (ls/find/mkdir/curl/diff/wc/...), Go toolchain, pnpm, build systems (make/cargo/gradle/...), openssl, JS/TS tools (node/npx/eslint/vitest/...), infrastructure tools (terraform/kubectl/helm/aws/...), all non-Bash tools (Read/Edit/Write/Glob/Grep/Agent/WebFetch).
+| Category | Examples |
+|----------|----------|
+| Version control | `git`, `gh` |
+| Containers | `docker`, `docker-compose` |
+| Python | `python`, `uv`, `pip`, `pytest` |
+| Go | `go build`, `go test`, `golangci-lint` |
+| JavaScript/TypeScript | `node`, `npx`, `pnpm`, `eslint`, `vitest` |
+| Build systems | `make`, `cargo`, `gradle`, `mvn` |
+| Infrastructure | `terraform`, `kubectl`, `helm`, `aws`, `gcloud` |
+| Shell utilities | `ls`, `find`, `mkdir`, `curl`, `diff`, `wc`, `jq`, `openssl`, `timeout` |
+| Non-Bash tools | `Read`, `Edit`, `Write`, `Glob`, `Grep`, `Agent`, `WebFetch` |
 
 ## Configuration
 
@@ -138,27 +129,25 @@ Deny always wins across all layers.
 
 ### Security: config trust boundaries
 
-- **Global config** (`~/.claude/.gatekeeper.toml`) — trusted, controlled by the user.
+- **Global config** (`~/.claude/.gatekeeper.toml`) — trusted, controlled by you.
 - **Project config** (`.claude/gatekeeper.toml`) — comes from the repository. A malicious repo could add allow rules or precondition commands that execute shell commands. Review project configs before trusting them. Precondition commands run with a 5-second timeout.
 
 ## Migrating from settings.json
+
+If you have existing `permissions.allow` / `permissions.deny` globs in your settings:
 
 ```bash
 claude-gatekeeper migrate
 ```
 
-This reads your `~/.claude/settings.json` and `settings.local.json`, converts permission globs to regex rules, and writes `~/.claude/.gatekeeper.toml`.
+This reads `~/.claude/settings.json` and `settings.local.json`, converts permission globs to regex rules, and writes `~/.claude/.gatekeeper.toml`. A backup is created if the output file already exists.
 
 Options:
 ```bash
 claude-gatekeeper migrate --settings /path/to/settings.json --output /path/to/output.toml
 ```
 
-The migration creates a backup if the output file already exists. Review the generated TOML and refine with:
-
-```bash
-claude -p "Convert these Claude Code permission globs to PCRE2 regex: Bash(git add:*) Bash(curl:*)"
-```
+Review the generated TOML — some globs may need manual refinement.
 
 ## Debugging
 
@@ -168,7 +157,7 @@ Run with `--debug` to see rule evaluation on stderr:
 # Test manually:
 echo '{"tool_name":"Bash","tool_input":{"command":"git push --force"},"cwd":"/tmp"}' | claude-gatekeeper --debug
 
-# When using the plugin, set the command in hooks/hooks.json to:
+# Enable in the plugin by editing hooks/hooks.json:
 "command": "${CLAUDE_PLUGIN_ROOT}/bin/claude-gatekeeper --debug"
 ```
 
