@@ -77,7 +77,7 @@ Out of the box, gatekeeper **denies**:
 
 | Category | Examples |
 |----------|----------|
-| Destructive git | `git reset --hard`, `git clean -f`, `git push --force`, `git commit --amend` |
+| Destructive git | `git reset --hard`, `git clean -f`, `git push --force`, `git commit --amend`, `git branch -D` |
 | Push to main/master | Explicit (`git push origin main`) and implicit (on main branch, run `git push`) |
 | Recursive delete | `rm -r`, `rm -rf` |
 | sed/awk | Forces the Edit tool instead |
@@ -148,6 +148,11 @@ include_defaults = false
 | `.claude/gatekeeper.toml` | Per-project (appended to global) |
 
 Deny always wins across all layers.
+
+### Security: config trust boundaries
+
+- **Global config** (`~/.claude/.gatekeeper.toml`) — trusted, controlled by the user.
+- **Project config** (`.claude/gatekeeper.toml`) — comes from the repository. A malicious repo could add allow rules or precondition commands that execute shell commands. Review project configs before trusting them. Precondition commands run with a 5-second timeout.
 
 ## Migrating from settings.json
 

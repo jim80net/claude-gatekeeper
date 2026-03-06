@@ -43,6 +43,13 @@ reason = "Destructive: git commit --amend"
 # env-prefix aware:
 # input = '(\w+=\S+\s+)*git\s+commit\s+.*--amend'
 
+# Force-delete a branch
+[[rules]]
+tool   = 'Bash'
+input  = 'git\s+branch\s+(-[a-zA-Z]*D|--delete\s+--force)'
+decision = "deny"
+reason = "Destructive: git branch force-delete"
+
 # =============================================================================
 # DENY — Push to main/master (explicit branch name in command)
 # =============================================================================
@@ -113,6 +120,9 @@ reason = "Use pnpm instead of npm"
 
 # =============================================================================
 # DENY — Credential / secret file reads
+#
+# NOTE: The Read-tool deny rule below wins over the "allow all Read" rule
+# further down because deny always takes priority regardless of order.
 # =============================================================================
 
 [[rules]]

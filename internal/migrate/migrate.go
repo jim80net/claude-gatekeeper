@@ -95,7 +95,10 @@ func Run(settingsPath, outputPath string) error {
 	fmt.Fprintf(os.Stderr, "2. Optionally refine with:\n")
 	fmt.Fprintf(os.Stderr, "     claude -p \"Convert these Claude Code permission globs to\n")
 	fmt.Fprintf(os.Stderr, "     PCRE2-compatible regex for claude-gatekeeper. Here are the\n")
-	fmt.Fprintf(os.Stderr, "     original globs:\\n%s\"\n", strings.Join(append(allowGlobs, denyGlobs...), "\\n"))
+	allGlobs := make([]string, 0, len(allowGlobs)+len(denyGlobs))
+	allGlobs = append(allGlobs, allowGlobs...)
+	allGlobs = append(allGlobs, denyGlobs...)
+	fmt.Fprintf(os.Stderr, "     original globs:\\n%s\"\n", strings.Join(allGlobs, "\\n"))
 	fmt.Fprintf(os.Stderr, "3. Remove the 'permissions' block from your settings.json files.\n")
 	fmt.Fprintf(os.Stderr, "4. Install the hook:  make install\n")
 	return nil

@@ -258,6 +258,7 @@ func TestDefaultRules(t *testing.T) {
 		{"deny git commit --amend", bashInput("git commit --amend -m 'fix'"), ptr(protocol.Deny)},
 		{"deny git push origin main", bashInput("git push origin main"), ptr(protocol.Deny)},
 		{"deny git push origin master", bashInput("git push origin master"), ptr(protocol.Deny)},
+		{"deny git branch -D", bashInput("git branch -D feature-branch"), ptr(protocol.Deny)},
 		{"deny rm -rf", bashInput("rm -rf /tmp/stuff"), ptr(protocol.Deny)},
 		{"deny rm -r", bashInput("rm -r dir/"), ptr(protocol.Deny)},
 		{"deny rm --recursive", bashInput("rm --recursive dir/"), ptr(protocol.Deny)},

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -127,7 +128,12 @@ func writeSettings(path string, settings map[string]interface{}) error {
 		return fmt.Errorf("marshalling JSON: %w", err)
 	}
 	data = append(data, '\n')
-	return os.WriteFile(path, data, 0644)
+	// Atomic write: write to temp file then rename to avoid corruption on crash.
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 func backup(path string) error {
@@ -147,12 +153,13 @@ func backup(path string) error {
 }
 
 // hasGatekeeperHook checks if a gatekeeper hook is already configured.
+// Uses non-mutating peekMap/peekSlice to avoid polluting settings on read.
 func hasGatekeeperHook(settings map[string]interface{}) bool {
-	hooks := getMap(settings, "hooks")
-	preToolUse := getSlice(hooks, "PreToolUse")
+	hooks := peekMap(settings, "hooks")
+	preToolUse := peekSlice(hooks, "PreToolUse")
 	for _, entry := range preToolUse {
 		if m, ok := entry.(map[string]interface{}); ok {
-			for _, h := range getSlice(m, "hooks") {
+			for _, h := range peekSlice(m, "hooks") {
 				if hm, ok := h.(map[string]interface{}); ok {
 					if cmd, _ := hm["command"].(string); isGatekeeperCommand(cmd) {
 						return true
@@ -210,14 +217,12 @@ func removeGatekeeperHook(settings map[string]interface{}) {
 }
 
 func isGatekeeperCommand(cmd string) bool {
-	// Match both bare "claude-gatekeeper" and full paths ending in it,
-	// with optional flags like --debug.
 	if cmd == "" {
 		return false
 	}
-	base := filepath.Base(cmd)
-	// Handle "claude-gatekeeper --debug" or just "claude-gatekeeper"
-	return base == hookCommand || len(base) > len(hookCommand) && base[:len(hookCommand)] == hookCommand && (base[len(hookCommand)] == ' ')
+	// The command field may include flags: "/path/to/claude-gatekeeper --debug"
+	fields := strings.Fields(cmd)
+	return filepath.Base(fields[0]) == hookCommand
 }
 
 // getMap returns settings[key] as a map, creating it if absent.
@@ -236,4 +241,17 @@ func getSlice(m map[string]interface{}, key string) []interface{} {
 		return v
 	}
 	return nil
+}
+
+// peekMap returns settings[key] as a map without mutating the parent.
+func peekMap(m map[string]interface{}, key string) map[string]interface{} {
+	if v, ok := m[key].(map[string]interface{}); ok {
+		return v
+	}
+	return nil
+}
+
+// peekSlice returns m[key] as a slice without mutating the parent.
+func peekSlice(m map[string]interface{}, key string) []interface{} {
+	return getSlice(m, key) // getSlice is already non-mutating
 }

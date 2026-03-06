@@ -201,6 +201,55 @@ func TestUninstallNoSettings(t *testing.T) {
 	}
 }
 
+func TestInstallIdempotentWithPath(t *testing.T) {
+	// Test that idempotent check works with full paths and flags.
+	existing := `{
+		"hooks": {
+			"PreToolUse": [
+				{
+					"matcher": "",
+					"hooks": [{"type":"command","command":"/home/user/.claude/hooks/claude-gatekeeper --debug","timeout":10}]
+				}
+			]
+		}
+	}`
+	_, settingsPath := setupHome(t, existing)
+
+	// Should detect the existing hook even with a different path/flags.
+	setup.Install("/other/path/claude-gatekeeper")
+
+	m := readJSON(t, settingsPath)
+	hooks := m["hooks"].(map[string]interface{})
+	ptu := hooks["PreToolUse"].([]interface{})
+	if len(ptu) != 1 {
+		t.Errorf("expected 1 PreToolUse entry (idempotent), got %d", len(ptu))
+	}
+}
+
+func TestUninstallWithPathAndFlags(t *testing.T) {
+	existing := `{
+		"model": "opus",
+		"hooks": {
+			"PreToolUse": [
+				{
+					"matcher": "",
+					"hooks": [{"type":"command","command":"/home/user/.claude/hooks/claude-gatekeeper --debug","timeout":10}]
+				}
+			]
+		}
+	}`
+	_, settingsPath := setupHome(t, existing)
+
+	if err := setup.Uninstall(); err != nil {
+		t.Fatalf("Uninstall: %v", err)
+	}
+
+	m := readJSON(t, settingsPath)
+	if _, ok := m["hooks"]; ok {
+		t.Error("hooks key should be removed after uninstall")
+	}
+}
+
 func TestUninstallNoHook(t *testing.T) {
 	_, _ = setupHome(t, `{"model":"opus"}`)
 

@@ -25,7 +25,7 @@ type CompiledRule struct {
 
 // Engine evaluates rules and returns permission decisions.
 type Engine struct {
-	Rules []CompiledRule
+	rules []CompiledRule
 	debug bool
 	// execCommand is overridable for testing preconditions.
 	execCommand func(ctx context.Context, cwd, command string) (string, error)
@@ -71,7 +71,7 @@ func New(cfg *config.Config, debug bool) (*Engine, error) {
 			Reason:            r.Reason,
 		})
 	}
-	return &Engine{Rules: rules, debug: debug, execCommand: defaultExecCommand}, nil
+	return &Engine{rules: rules, debug: debug, execCommand: defaultExecCommand}, nil
 }
 
 // Evaluate checks all rules and returns a decision.
@@ -86,7 +86,7 @@ func (e *Engine) Evaluate(input *protocol.HookInput) (*protocol.HookOutput, erro
 	var denyReasons []string
 	anyAllow := false
 
-	for _, rule := range e.Rules {
+	for _, rule := range e.rules {
 		toolMatch, err := rule.ToolRegex.MatchString(input.ToolName)
 		if err != nil || !toolMatch {
 			continue

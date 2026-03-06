@@ -31,6 +31,7 @@ func TestLoadDefaults(t *testing.T) {
 		"Use the Edit tool instead of sed/awk",
 		"Destructive SQL operation",
 		"Use pnpm instead of npm",
+		"Destructive: git branch force-delete",
 		"Credential/secret file access denied",
 	} {
 		if !denies[want] {
