@@ -26,6 +26,7 @@ archives:
       - hooks/**
       - .claude-plugin/**
       - bin/run.sh
+      - bin/run.ps1
       - gatekeeper.toml
       - README.md
       - LICENSE

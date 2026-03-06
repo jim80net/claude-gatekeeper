@@ -35,6 +35,13 @@ jobs:
               -o "dist/claude-gatekeeper-${GOOS}-${GOARCH}" \
               ./cmd/claude-gatekeeper
           done
+          for arch in amd64 arm64; do
+            echo "Building windows/${arch}..."
+            CGO_ENABLED=0 GOOS=windows GOARCH="$arch" \
+              go build -ldflags "$LDFLAGS" \
+              -o "dist/claude-gatekeeper-windows-${arch}.exe" \
+              ./cmd/claude-gatekeeper
+          done
           ls -lh dist/
 
       - name: Commit binaries
