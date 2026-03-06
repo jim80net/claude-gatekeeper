@@ -18,8 +18,9 @@ PreToolUse permission hook for Claude Code. Written in Go for fast startup.
 This project is a Claude Code plugin. Key files:
 - `.claude-plugin/plugin.json` — manifest pointing to `hooks/hooks.json`
 - `hooks/hooks.json` — hook command using `${CLAUDE_PLUGIN_ROOT}/bin/run.sh`
-- `bin/run.sh` — wrapper script that builds the Go binary on first call
-- `bin/claude-gatekeeper` — built binary (created by `make build` or auto-built by `run.sh`)
+- `bin/run.sh` — wrapper script that selects the right platform binary
+- `dist/` — pre-built binaries for linux/darwin amd64/arm64 (committed by CI)
+- `bin/claude-gatekeeper` — local dev binary (from `make build`)
 
 Test as a plugin: `claude --plugin-dir .`
 
