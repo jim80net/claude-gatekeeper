@@ -83,6 +83,16 @@ func (e *Engine) Evaluate(input *protocol.HookInput) (*protocol.HookOutput, erro
 		protocol.Debugf("evaluate: tool=%s input=%q", input.ToolName, inputStr)
 	}
 
+	// For Bash commands with a leading "cd <path> &&", extract the prefix
+	// so preconditions run in the correct directory.
+	var cdPrefix string
+	if input.ToolName == "Bash" {
+		cdPrefix = ExtractCDPrefix(inputStr)
+		if e.debug && cdPrefix != "" {
+			protocol.Debugf("  extracted cd prefix: %s", cdPrefix)
+		}
+	}
+
 	var denyReasons []string
 	anyAllow := false
 
@@ -99,7 +109,7 @@ func (e *Engine) Evaluate(input *protocol.HookInput) (*protocol.HookOutput, erro
 
 		// Check precondition if present.
 		if rule.PreconditionCmd != "" {
-			if !e.checkPrecondition(rule.PreconditionCmd, rule.PreconditionRegex, input.CWD) {
+			if !e.checkPrecondition(rule.PreconditionCmd, rule.PreconditionRegex, input.CWD, cdPrefix) {
 				if e.debug {
 					protocol.Debugf("  precondition failed: %s", rule.Reason)
 				}
@@ -135,11 +145,18 @@ func (e *Engine) Evaluate(input *protocol.HookInput) (*protocol.HookOutput, erro
 	return nil, nil
 }
 
-func (e *Engine) checkPrecondition(cmd string, matchRe *regexp2.Regexp, cwd string) bool {
+func (e *Engine) checkPrecondition(cmd string, matchRe *regexp2.Regexp, cwd string, cdPrefix string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	output, err := e.execCommand(ctx, cwd, cmd)
+	// If the Bash command had a leading "cd <path> &&", prepend it to the
+	// precondition so it runs in the same directory the command targets.
+	effectiveCmd := cmd
+	if cdPrefix != "" {
+		effectiveCmd = cdPrefix + " " + cmd
+	}
+
+	output, err := e.execCommand(ctx, cwd, effectiveCmd)
 	if err != nil {
 		if e.debug {
 			protocol.Debugf("  precondition cmd error: %v", err)
@@ -159,6 +176,21 @@ func defaultExecCommand(ctx context.Context, cwd, command string) (string, error
 	cmd.Dir = cwd
 	out, err := cmd.Output()
 	return string(out), err
+}
+
+// ExtractCDPrefix returns any leading "cd <path> &&" from a Bash command,
+// including the "&&". Returns "" if no cd prefix is found.
+// This allows preconditions to run in the same directory the command targets.
+func ExtractCDPrefix(command string) string {
+	idx := strings.Index(command, "&&")
+	if idx < 0 {
+		return ""
+	}
+	prefix := strings.TrimSpace(command[:idx])
+	if strings.HasPrefix(prefix, "cd ") {
+		return strings.TrimSpace(command[:idx+2])
+	}
+	return ""
 }
 
 func makeOutput(decision protocol.Decision, reason string) *protocol.HookOutput {
