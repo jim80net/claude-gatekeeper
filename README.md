@@ -16,9 +16,10 @@ Claude Code's built-in permission globs (`Bash(git add:*)`) can't match env-pref
 git clone https://github.com/jim80net/claude-gatekeeper.git
 cd claude-gatekeeper
 make build
-make init-config   # copies gatekeeper.toml → ~/.claude/gatekeeper.toml (if not present)
 claude --plugin-dir .
 ```
+
+On first tool call, the gatekeeper automatically copies `gatekeeper.toml` to `~/.claude/gatekeeper.toml` if it doesn't exist yet.
 
 ### From a GitHub release
 
@@ -31,8 +32,9 @@ claude --plugin-dir /path/to/claude-gatekeeper
 ## How it works
 
 1. Claude Code invokes the gatekeeper before each tool call, sending JSON on stdin.
-2. Rules are loaded from:
-   - **Global config** — `~/.claude/gatekeeper.toml` (installed by `make init-config`)
+2. On first run, the shipped `gatekeeper.toml` is auto-copied to `~/.claude/gatekeeper.toml` if it doesn't exist.
+3. Rules are loaded from:
+   - **Global config** — `~/.claude/gatekeeper.toml` (auto-installed on first run)
    - **Project config** — `.claude/gatekeeper.toml`
 3. Each rule has a `tool` regex (matched against the tool name) and an `input` regex (matched against the command/file path/URL).
 4. **Deny always wins**: if any deny rule matches, the call is blocked and Claude is told why.
@@ -41,7 +43,7 @@ claude --plugin-dir /path/to/claude-gatekeeper
 
 ## Default rules
 
-The shipped `gatekeeper.toml` (installed to `~/.claude/gatekeeper.toml` by `make init-config`) **denies**:
+The shipped `gatekeeper.toml` (auto-installed to `~/.claude/gatekeeper.toml` on first run) **denies**:
 
 | Category | Examples |
 |----------|----------|
@@ -111,7 +113,7 @@ input = '(?:^|[|;&]\s*)git\s'
 
 | File | Scope |
 |------|-------|
-| `~/.claude/gatekeeper.toml` | All projects (global — installed by `make init-config`) |
+| `~/.claude/gatekeeper.toml` | All projects (global — auto-installed on first run) |
 | `.claude/gatekeeper.toml` | Per-project (appended to global) |
 
 Deny always wins across all layers. If no config files exist, the gatekeeper abstains on everything.

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/jim80net/claude-gatekeeper/internal/config"
 	"github.com/jim80net/claude-gatekeeper/internal/engine"
@@ -58,6 +59,16 @@ func run(stdin io.Reader, stdout io.Writer, args []string) int {
 	}
 
 	protocol.DebugEnabled = *debug
+
+	// Auto-install default config on first run.
+	if exe, err := os.Executable(); err == nil {
+		if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+			templatePath := filepath.Join(filepath.Dir(resolved), "..", "gatekeeper.toml")
+			if err := config.EnsureGlobalConfig(templatePath); err != nil {
+				protocol.Debugf("auto-config: %v", err)
+			}
+		}
+	}
 
 	// Read hook input from stdin.
 	input, err := protocol.ReadInput(stdin)
@@ -138,7 +149,7 @@ func runMigrate(args []string) int {
 	fs := flag.NewFlagSet("migrate", flag.ExitOnError)
 	fs.SetOutput(os.Stderr)
 	settingsPath := fs.String("settings", "", "Path to settings.json (auto-detected if omitted)")
-	outputPath := fs.String("output", "", "Output path for .gatekeeper.toml (default: ~/.claude/.gatekeeper.toml)")
+	outputPath := fs.String("output", "", "Output path for gatekeeper.toml (default: ~/.claude/gatekeeper.toml)")
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}

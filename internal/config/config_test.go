@@ -83,6 +83,61 @@ func TestLoadNoConfig(t *testing.T) {
 	}
 }
 
+func TestEnsureGlobalConfigCreatesFile(t *testing.T) {
+	homeDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", homeDir)
+	defer os.Setenv("HOME", origHome)
+
+	// Create a template file.
+	templateDir := t.TempDir()
+	templatePath := filepath.Join(templateDir, "gatekeeper.toml")
+	os.WriteFile(templatePath, []byte("[[rules]]\ntool = 'Bash'\ninput = '.*'\ndecision = \"allow\"\nreason = \"test\"\n"), 0644)
+
+	err := config.EnsureGlobalConfig(templatePath)
+	if err != nil {
+		t.Fatalf("EnsureGlobalConfig: %v", err)
+	}
+
+	dest := filepath.Join(homeDir, ".claude", "gatekeeper.toml")
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("reading installed config: %v", err)
+	}
+	if len(data) == 0 {
+		t.Error("installed config is empty")
+	}
+}
+
+func TestEnsureGlobalConfigSkipsExisting(t *testing.T) {
+	homeDir := t.TempDir()
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", homeDir)
+	defer os.Setenv("HOME", origHome)
+
+	// Pre-create the config with custom content.
+	claudeDir := filepath.Join(homeDir, ".claude")
+	os.MkdirAll(claudeDir, 0755)
+	existing := []byte("# my custom config\n")
+	os.WriteFile(filepath.Join(claudeDir, "gatekeeper.toml"), existing, 0644)
+
+	// Create a template with different content.
+	templateDir := t.TempDir()
+	templatePath := filepath.Join(templateDir, "gatekeeper.toml")
+	os.WriteFile(templatePath, []byte("# template content\n"), 0644)
+
+	err := config.EnsureGlobalConfig(templatePath)
+	if err != nil {
+		t.Fatalf("EnsureGlobalConfig: %v", err)
+	}
+
+	// Verify the existing file was NOT overwritten.
+	data, _ := os.ReadFile(filepath.Join(claudeDir, "gatekeeper.toml"))
+	if string(data) != string(existing) {
+		t.Errorf("existing config was overwritten: got %q", string(data))
+	}
+}
+
 func TestLoadFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.toml")
