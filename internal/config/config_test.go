@@ -8,60 +8,6 @@ import (
 	"github.com/jim80net/claude-gatekeeper/internal/config"
 )
 
-func TestLoadDefaults(t *testing.T) {
-	cfg, err := config.LoadDefaults()
-	if err != nil {
-		t.Fatalf("LoadDefaults: %v", err)
-	}
-	if len(cfg.Rules) == 0 {
-		t.Fatal("expected non-zero default rules")
-	}
-
-	// Verify key deny rules exist.
-	denies := map[string]bool{}
-	for _, r := range cfg.Rules {
-		if r.Decision == "deny" {
-			denies[r.Reason] = true
-		}
-	}
-	for _, want := range []string{
-		"Destructive: git reset --hard",
-		"Destructive: git force push",
-		"Destructive: recursive delete (rm -r)",
-		"Use the Edit tool instead of sed/awk",
-		"Destructive SQL operation",
-		"Use pnpm instead of npm",
-		"Destructive: git branch force-delete",
-		"Credential/secret file access denied",
-	} {
-		if !denies[want] {
-			t.Errorf("missing deny rule: %q", want)
-		}
-	}
-
-	// Verify key allow rules exist.
-	allows := map[string]bool{}
-	for _, r := range cfg.Rules {
-		if r.Decision == "allow" {
-			allows[r.Reason] = true
-		}
-	}
-	for _, want := range []string{
-		"Git operations (non-destructive)",
-		"GitHub CLI",
-		"Docker",
-		"Python toolchain",
-		"Go toolchain",
-		"pnpm package manager",
-		"File browsing",
-		"File editing",
-	} {
-		if !allows[want] {
-			t.Errorf("missing allow rule: %q", want)
-		}
-	}
-}
-
 func TestLoadLayered(t *testing.T) {
 	// Create a temp dir acting as $HOME/.claude/
 	homeDir := t.TempDir()
@@ -75,7 +21,7 @@ input = '^custom-tool\s'
 decision = "allow"
 reason = "Custom global rule"
 `
-	os.WriteFile(filepath.Join(globalDir, ".gatekeeper.toml"), []byte(globalConfig), 0644)
+	os.WriteFile(filepath.Join(globalDir, "gatekeeper.toml"), []byte(globalConfig), 0644)
 
 	// Create a project dir with its own config.
 	projectDir := t.TempDir()
@@ -101,7 +47,7 @@ reason = "Project deny rule"
 		t.Fatalf("Load: %v", err)
 	}
 
-	// Should have defaults + global + project rules.
+	// Should have global + project rules.
 	foundGlobal := false
 	foundProject := false
 	for _, r := range cfg.Rules {
@@ -120,21 +66,8 @@ reason = "Project deny rule"
 	}
 }
 
-func TestLoadIncludeDefaultsFalse(t *testing.T) {
+func TestLoadNoConfig(t *testing.T) {
 	homeDir := t.TempDir()
-	globalDir := filepath.Join(homeDir, ".claude")
-	os.MkdirAll(globalDir, 0755)
-
-	globalConfig := `
-include_defaults = false
-
-[[rules]]
-tool  = 'Bash'
-input = '^only-this\s'
-decision = "allow"
-reason = "Only rule"
-`
-	os.WriteFile(filepath.Join(globalDir, ".gatekeeper.toml"), []byte(globalConfig), 0644)
 
 	origHome := os.Getenv("HOME")
 	os.Setenv("HOME", homeDir)
@@ -145,10 +78,32 @@ reason = "Only rule"
 		t.Fatalf("Load: %v", err)
 	}
 
+	if len(cfg.Rules) != 0 {
+		t.Fatalf("expected 0 rules with no config files, got %d", len(cfg.Rules))
+	}
+}
+
+func TestLoadFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.toml")
+
+	content := `
+[[rules]]
+tool  = 'Bash'
+input = '^echo\s'
+decision = "allow"
+reason = "Echo"
+`
+	os.WriteFile(path, []byte(content), 0644)
+
+	cfg, err := config.LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
 	if len(cfg.Rules) != 1 {
 		t.Fatalf("expected 1 rule, got %d", len(cfg.Rules))
 	}
-	if cfg.Rules[0].Reason != "Only rule" {
+	if cfg.Rules[0].Reason != "Echo" {
 		t.Errorf("unexpected rule: %q", cfg.Rules[0].Reason)
 	}
 }

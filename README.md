@@ -16,6 +16,7 @@ Claude Code's built-in permission globs (`Bash(git add:*)`) can't match env-pref
 git clone https://github.com/jim80net/claude-gatekeeper.git
 cd claude-gatekeeper
 make build
+make init-config   # copies gatekeeper.toml → ~/.claude/gatekeeper.toml (if not present)
 claude --plugin-dir .
 ```
 
@@ -31,17 +32,16 @@ claude --plugin-dir /path/to/claude-gatekeeper
 
 1. Claude Code invokes the gatekeeper before each tool call, sending JSON on stdin.
 2. Rules are loaded from:
-   - **Embedded defaults** — safe out-of-the-box rules (see below)
-   - **Global config** — `~/.claude/.gatekeeper.toml`
+   - **Global config** — `~/.claude/gatekeeper.toml` (installed by `make init-config`)
    - **Project config** — `.claude/gatekeeper.toml`
 3. Each rule has a `tool` regex (matched against the tool name) and an `input` regex (matched against the command/file path/URL).
 4. **Deny always wins**: if any deny rule matches, the call is blocked and Claude is told why.
 5. If any allow rule matches (and no deny), the call is auto-approved.
-6. If nothing matches, the gatekeeper abstains and Claude Code prompts you.
+6. If nothing matches (or no config exists), the gatekeeper abstains and Claude Code prompts you.
 
 ## Default rules
 
-Out of the box, gatekeeper **denies**:
+The shipped `gatekeeper.toml` (installed to `~/.claude/gatekeeper.toml` by `make init-config`) **denies**:
 
 | Category | Examples |
 |----------|----------|
@@ -50,7 +50,7 @@ Out of the box, gatekeeper **denies**:
 | Recursive delete | `rm -r`, `rm -rf` |
 | sed/awk | Forces the Edit tool instead |
 | Destructive SQL | `DROP`, `TRUNCATE`, `DELETE FROM` |
-| npm | Use pnpm instead |
+| npm | Use pnpm instead (commented out by default — uncomment to enable) |
 | Credential files | `.env`, `.envrc`, `*key.json`, `id_rsa`, `.pem`, `credentials` |
 
 And **allows**:
@@ -107,29 +107,18 @@ input = '(?:^|[|;&]\s*)git\s'
 # input = '(?:^|(\w+=\S+\s+)*)git\s'
 ```
 
-### Disabling defaults
-
-```toml
-# In ~/.claude/.gatekeeper.toml or .claude/gatekeeper.toml
-include_defaults = false
-
-[[rules]]
-# Your custom rules only
-```
-
 ### Config layering
 
 | File | Scope |
 |------|-------|
-| Embedded `defaults.toml` | Always loaded (unless `include_defaults = false`) |
-| `~/.claude/.gatekeeper.toml` | All projects (global) |
+| `~/.claude/gatekeeper.toml` | All projects (global — installed by `make init-config`) |
 | `.claude/gatekeeper.toml` | Per-project (appended to global) |
 
-Deny always wins across all layers.
+Deny always wins across all layers. If no config files exist, the gatekeeper abstains on everything.
 
 ### Security: config trust boundaries
 
-- **Global config** (`~/.claude/.gatekeeper.toml`) — trusted, controlled by you.
+- **Global config** (`~/.claude/gatekeeper.toml`) — trusted, controlled by you.
 - **Project config** (`.claude/gatekeeper.toml`) — comes from the repository. A malicious repo could add allow rules or precondition commands that execute shell commands. Review project configs before trusting them. Precondition commands run with a 5-second timeout.
 
 ## Migrating from settings.json
@@ -140,7 +129,7 @@ If you have existing `permissions.allow` / `permissions.deny` globs in your sett
 claude-gatekeeper migrate
 ```
 
-This reads `~/.claude/settings.json` and `settings.local.json`, converts permission globs to regex rules, and writes `~/.claude/.gatekeeper.toml`. A backup is created if the output file already exists.
+This reads `~/.claude/settings.json` and `settings.local.json`, converts permission globs to regex rules, and writes `~/.claude/gatekeeper.toml`. A backup is created if the output file already exists.
 
 Options:
 ```bash

@@ -23,7 +23,7 @@ hooks/                   Claude Code plugin hook definition
 
 ## Adding a new default rule
 
-1. Add the rule to `internal/config/defaults.toml`
+1. Add the rule to `gatekeeper.toml` (repo root)
 2. Add a test case to `TestDefaultRules` in `internal/engine/engine_test.go`
 3. Run `make test`
 

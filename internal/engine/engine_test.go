@@ -227,11 +227,11 @@ func TestInvalidDecision(t *testing.T) {
 	}
 }
 
-// TestDefaultRules validates the embedded default rules against realistic commands.
+// TestDefaultRules validates the shipped default rules against realistic commands.
 func TestDefaultRules(t *testing.T) {
-	cfg, err := config.LoadDefaults()
+	cfg, err := config.LoadFile("../../gatekeeper.toml")
 	if err != nil {
-		t.Fatalf("LoadDefaults: %v", err)
+		t.Fatalf("LoadFile(gatekeeper.toml): %v", err)
 	}
 
 	eng, err := engine.New(cfg, false)
@@ -267,8 +267,6 @@ func TestDefaultRules(t *testing.T) {
 		{"deny DROP TABLE", bashInput("psql -c 'DROP TABLE users'"), ptr(protocol.Deny)},
 		{"deny TRUNCATE", bashInput("mysql -e 'TRUNCATE TABLE logs'"), ptr(protocol.Deny)},
 		{"deny DELETE FROM", bashInput("sqlite3 db.sqlite 'DELETE FROM users'"), ptr(protocol.Deny)},
-		{"deny npm install", bashInput("npm install lodash"), ptr(protocol.Deny)},
-		{"deny npm run", bashInput("npm run build"), ptr(protocol.Deny)},
 		{"deny cat .env", bashInput("cat .env"), ptr(protocol.Deny)},
 		{"deny read .env", readInput("/project/.env"), ptr(protocol.Deny)},
 		{"deny read id_rsa", readInput("/home/user/.ssh/id_rsa"), ptr(protocol.Deny)},

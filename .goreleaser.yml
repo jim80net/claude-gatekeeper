@@ -25,6 +25,7 @@ archives:
     files:
       - hooks/**
       - .claude-plugin/**
+      - gatekeeper.toml
       - README.md
       - LICENSE
     format_overrides:
