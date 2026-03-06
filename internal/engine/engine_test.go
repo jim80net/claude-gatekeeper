@@ -139,6 +139,99 @@ func TestPreconditionDoesNotMatch(t *testing.T) {
 	}
 }
 
+func TestPreconditionWithCDPrefix(t *testing.T) {
+	// When the command is "cd /other/repo && git push", the precondition
+	// should run with "cd /other/repo && git branch --show-current",
+	// NOT just "git branch --show-current" in the session CWD.
+	rules := []config.Rule{
+		{
+			Tool:              "Bash",
+			Input:             "\\bgit\\s+push\\b(?!.*\\b(main|master)\\b)",
+			Precondition:      "git branch --show-current",
+			PreconditionMatch: "^(main|master)$",
+			Decision:          "deny",
+			Reason:            "push on main",
+		},
+	}
+
+	t.Run("cd to repo on feature branch allows push", func(t *testing.T) {
+		eng := newEngine(t, rules)
+		eng.SetExecCommand(func(ctx context.Context, cwd, command string) (string, error) {
+			// Verify the cd prefix was prepended to the precondition.
+			if command != "cd /other/repo && git branch --show-current" {
+				t.Errorf("expected cd-prefixed precondition, got: %s", command)
+			}
+			return "feature-branch\n", nil
+		})
+
+		out, err := eng.Evaluate(bashInput("cd /other/repo && git push -u origin feature-branch"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out != nil {
+			t.Error("expected abstain (no deny) when cd'd repo is on feature branch")
+		}
+	})
+
+	t.Run("cd to repo on main still denies push", func(t *testing.T) {
+		eng := newEngine(t, rules)
+		eng.SetExecCommand(func(ctx context.Context, cwd, command string) (string, error) {
+			if command != "cd /other/repo && git branch --show-current" {
+				t.Errorf("expected cd-prefixed precondition, got: %s", command)
+			}
+			return "main\n", nil
+		})
+
+		out, err := eng.Evaluate(bashInput("cd /other/repo && git push"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out == nil || out.HookSpecificOutput.PermissionDecision != protocol.Deny {
+			t.Error("expected deny when cd'd repo is on main")
+		}
+	})
+
+	t.Run("no cd prefix keeps original behavior", func(t *testing.T) {
+		eng := newEngine(t, rules)
+		eng.SetExecCommand(func(ctx context.Context, cwd, command string) (string, error) {
+			if command != "git branch --show-current" {
+				t.Errorf("expected bare precondition, got: %s", command)
+			}
+			return "main\n", nil
+		})
+
+		out, err := eng.Evaluate(bashInput("git push"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out == nil || out.HookSpecificOutput.PermissionDecision != protocol.Deny {
+			t.Error("expected deny when CWD is on main")
+		}
+	})
+}
+
+func TestExtractCDPrefix(t *testing.T) {
+	tests := []struct {
+		command string
+		want    string
+	}{
+		{"cd /tmp/foo && git push", "cd /tmp/foo &&"},
+		{"cd /tmp/foo && git push -u origin main", "cd /tmp/foo &&"},
+		{"cd ~/projects/bar && git status", "cd ~/projects/bar &&"},
+		{"git push", ""},
+		{"echo cd /tmp && git push", ""},
+		{"cd /tmp/foo", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.command, func(t *testing.T) {
+			got := engine.ExtractCDPrefix(tt.command)
+			if got != tt.want {
+				t.Errorf("extractCDPrefix(%q) = %q, want %q", tt.command, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestToolMatching(t *testing.T) {
 	eng := newEngine(t, []config.Rule{
 		{Tool: "Read|Glob|Grep", Input: ".*", Decision: "allow", Reason: "browsing"},
