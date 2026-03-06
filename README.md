@@ -17,7 +17,12 @@ Claude Code's built-in permission globs (`Bash(git add:*)`) can't match env-pref
 /plugin install claude-gatekeeper@jim80net-plugins
 ```
 
-Pre-built binaries for Linux and macOS (amd64/arm64) are included in the repo. Default rules are auto-copied to `~/.claude/gatekeeper.toml` on first run.
+Pre-built binaries for Linux, macOS, and Windows (amd64/arm64) are included in the repo. Default rules are auto-copied to `~/.claude/gatekeeper.toml` on first run.
+
+**Windows (PowerShell)**: If you're on native Windows without Git Bash, edit `hooks/hooks.json` and change the command to:
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File ${CLAUDE_PLUGIN_ROOT}/bin/run.ps1
+```
 
 ### Local development
 
