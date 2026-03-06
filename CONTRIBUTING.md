@@ -8,7 +8,7 @@ cd claude-gatekeeper
 make test
 ```
 
-Requires Go 1.22+.
+Requires Go 1.22+. By submitting a pull request, you agree that your contributions are licensed under the [MIT License](LICENSE).
 
 ## Project structure
 

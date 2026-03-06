@@ -2,3 +2,22 @@ bin/
 dist/
 *.exe
 .claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE / editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.*
+
+# Go test artifacts
+*.out
+cover.out
