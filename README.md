@@ -17,7 +17,7 @@ Claude Code's built-in permission globs (`Bash(git add:*)`) can't match env-pref
 /plugin install claude-gatekeeper@jim80net-plugins
 ```
 
-The Go binary is compiled automatically on first tool call (requires Go 1.22+). Default rules are auto-copied to `~/.claude/gatekeeper.toml` if not already present.
+Pre-built binaries for Linux and macOS (amd64/arm64) are included in the repo. Default rules are auto-copied to `~/.claude/gatekeeper.toml` on first run.
 
 ### Local development
 
