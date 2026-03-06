@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -17,6 +18,7 @@ func TestIntegrationBinary(t *testing.T) {
 	}
 
 	binary := buildBinary(t)
+	homeDir := setupIntegrationHome(t)
 
 	tests := []struct {
 		name  string
@@ -31,11 +33,6 @@ func TestIntegrationBinary(t *testing.T) {
 		{
 			name:  "deny sed",
 			input: `{"tool_name":"Bash","tool_input":{"command":"sed -i 's/a/b/' file"},"cwd":"/tmp"}`,
-			want:  ptrI(protocol.Deny),
-		},
-		{
-			name:  "deny npm",
-			input: `{"tool_name":"Bash","tool_input":{"command":"npm install express"},"cwd":"/tmp"}`,
 			want:  ptrI(protocol.Deny),
 		},
 		{
@@ -79,7 +76,7 @@ func TestIntegrationBinary(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := exec.Command(binary)
 			cmd.Stdin = strings.NewReader(tt.input)
-			cmd.Env = append(os.Environ(), "HOME=/tmp/nonexistent-home")
+			cmd.Env = append(os.Environ(), "HOME="+homeDir)
 			out, err := cmd.Output()
 			if err != nil {
 				t.Fatalf("binary exited with error: %v", err)
@@ -117,4 +114,19 @@ func buildBinary(t *testing.T) string {
 		t.Fatalf("build failed: %v\n%s", err, out)
 	}
 	return binary
+}
+
+// setupIntegrationHome creates a temp HOME with the shipped gatekeeper.toml.
+func setupIntegrationHome(t *testing.T) string {
+	t.Helper()
+	homeDir := t.TempDir()
+	claudeDir := filepath.Join(homeDir, ".claude")
+	os.MkdirAll(claudeDir, 0755)
+
+	data, err := os.ReadFile("../../gatekeeper.toml")
+	if err != nil {
+		t.Fatalf("reading gatekeeper.toml: %v", err)
+	}
+	os.WriteFile(filepath.Join(claudeDir, "gatekeeper.toml"), data, 0644)
+	return homeDir
 }

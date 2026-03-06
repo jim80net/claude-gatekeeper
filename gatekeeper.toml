@@ -1,5 +1,7 @@
 # Claude Gatekeeper — Default Rules
 #
+# Copy this file to ~/.claude/gatekeeper.toml to activate.
+#
 # Rules are evaluated together. Deny ALWAYS wins over allow.
 # All regex patterns are PCRE2-compatible (via regexp2).
 # Use TOML single-quoted strings (') to avoid regex escaping issues.
@@ -112,11 +114,11 @@ reason = "Destructive SQL operation"
 # DENY — npm (use pnpm)
 # =============================================================================
 
-[[rules]]
-tool   = 'Bash'
-input  = '\bnpm\s'
-decision = "deny"
-reason = "Use pnpm instead of npm"
+# [[rules]]
+# tool   = 'Bash'
+# input  = '\bnpm\s'
+# decision = "deny"
+# reason = "Use pnpm instead of npm"
 
 # =============================================================================
 # DENY — Credential / secret file reads
