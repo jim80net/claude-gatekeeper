@@ -11,12 +11,12 @@ PreToolUse permission hook for Claude Code. Written in Go for fast startup.
 - `internal/migrate/` — Converts `settings.json` glob permissions to TOML regex rules
 - `internal/setup/` — Registers/unregisters the hook in `~/.claude/settings.json` (with backup)
 - `hooks/hooks.json` — Claude Code plugin hook definition (uses `${CLAUDE_PLUGIN_ROOT}`)
-- `.claude-plugin/plugin.json` — Plugin manifest for Claude Code plugin system
+- `.claude-plugin/plugin.json` — Plugin manifest (hooks auto-loaded from `hooks/hooks.json`)
 
 ## Plugin structure
 
 This project is a Claude Code plugin. Key files:
-- `.claude-plugin/plugin.json` — manifest pointing to `hooks/hooks.json`
+- `.claude-plugin/plugin.json` — manifest (no `hooks` field; `hooks/hooks.json` is auto-loaded)
 - `hooks/hooks.json` — hook command using `${CLAUDE_PLUGIN_ROOT}/bin/run.sh`
 - `bin/run.sh` — wrapper script that selects the right platform binary (Linux/macOS/WSL)
 - `bin/run.ps1` — PowerShell wrapper for native Windows

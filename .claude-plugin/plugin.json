@@ -3,6 +3,5 @@
   "version": "1.0.0",
   "description": "PCRE2 regex-based permission gatekeeper for Claude Code tool calls",
   "repository": "https://github.com/jim80net/claude-gatekeeper",
-  "license": "MIT",
-  "hooks": "./hooks/hooks.json"
+  "license": "MIT"
 }
