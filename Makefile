@@ -3,7 +3,7 @@ INSTALL_DIR := $(HOME)/.claude/hooks
 VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS    := -s -w -X main.version=$(VERSION)
 
-.PHONY: build test lint install uninstall clean
+.PHONY: build test lint install uninstall clean plugin-test
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/claude-gatekeeper
@@ -28,6 +28,10 @@ uninstall:
 	$(INSTALL_DIR)/$(BINARY) uninstall || true
 	rm -f $(INSTALL_DIR)/$(BINARY)
 	@echo "Uninstall complete."
+
+plugin-test: build
+	@echo "Run Claude Code with this plugin:"
+	@echo "  claude --plugin-dir $(CURDIR)"
 
 clean:
 	rm -rf bin/

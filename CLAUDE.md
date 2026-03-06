@@ -10,7 +10,17 @@ PreToolUse permission hook for Claude Code. Written in Go for fast startup.
 - `internal/engine/` — Compiles PCRE2 regexes (via regexp2), evaluates rules, deny-always-wins
 - `internal/migrate/` — Converts `settings.json` glob permissions to TOML regex rules
 - `internal/setup/` — Registers/unregisters the hook in `~/.claude/settings.json` (with backup)
-- `hooks/hooks.json` — Claude Code plugin hook definition
+- `hooks/hooks.json` — Claude Code plugin hook definition (uses `${CLAUDE_PLUGIN_ROOT}`)
+- `.claude-plugin/plugin.json` — Plugin manifest for Claude Code plugin system
+
+## Plugin structure
+
+This project is a Claude Code plugin. Key files:
+- `.claude-plugin/plugin.json` — manifest pointing to `hooks/hooks.json`
+- `hooks/hooks.json` — hook command using `${CLAUDE_PLUGIN_ROOT}/bin/claude-gatekeeper`
+- `bin/claude-gatekeeper` — built binary (run `make build`)
+
+Test as a plugin: `claude --plugin-dir .`
 
 ## Key design decisions
 
@@ -24,9 +34,10 @@ PreToolUse permission hook for Claude Code. Written in Go for fast startup.
 ## Build and test
 
 ```bash
-make build   # → bin/claude-gatekeeper
-make test    # Race-enabled tests
-make install # Build + install to ~/.claude/hooks/
+make build        # → bin/claude-gatekeeper
+make test         # Race-enabled tests
+make plugin-test  # Show command to test as a plugin
+make install      # Build + install to ~/.claude/hooks/ (standalone mode)
 ```
 
 ## Config files

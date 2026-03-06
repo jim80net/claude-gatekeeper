@@ -10,54 +10,41 @@ Claude Code's built-in permission globs (`Bash(git add:*)`) can't match env-pref
 
 ## Install
 
-### From source
+### As a Claude Code plugin (recommended)
+
+Build the binary and point Claude Code at the plugin directory:
 
 ```bash
-go install github.com/jim80net/claude-gatekeeper/cmd/claude-gatekeeper@latest
+git clone https://github.com/jim80net/claude-gatekeeper.git
+cd claude-gatekeeper
+make build
+claude --plugin-dir .
 ```
 
-### Build locally
+### From a GitHub release
+
+Download a pre-built archive from [Releases](https://github.com/jim80net/claude-gatekeeper/releases), extract it, and run:
 
 ```bash
+claude --plugin-dir /path/to/claude-gatekeeper
+```
+
+### Standalone (without plugin system)
+
+If you prefer the standalone hook registration:
+
+```bash
+# From source
+go install github.com/jim80net/claude-gatekeeper/cmd/claude-gatekeeper@latest
+claude-gatekeeper setup
+
+# Or build locally
 git clone https://github.com/jim80net/claude-gatekeeper.git
 cd claude-gatekeeper
 make install
 ```
 
-### GitHub Releases
-
-Download a pre-built binary from [Releases](https://github.com/jim80net/claude-gatekeeper/releases), place it on your `$PATH`, then run:
-
-```bash
-claude-gatekeeper setup
-```
-
-## Configure Claude Code
-
-`make install` (and `claude-gatekeeper setup`) automatically registers the PreToolUse hook in `~/.claude/settings.json`. A backup is created before any changes.
-
-To configure manually instead, add to `~/.claude/settings.json`:
-
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "claude-gatekeeper",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-Then remove any `permissions.allow` / `permissions.deny` arrays — gatekeeper handles those now.
+`make install` builds the binary, copies it to `~/.claude/hooks/`, and registers the PreToolUse hook in `~/.claude/settings.json` (with backup).
 
 ## How it works
 
@@ -181,8 +168,8 @@ Run with `--debug` to see rule evaluation on stderr:
 # Test manually:
 echo '{"tool_name":"Bash","tool_input":{"command":"git push --force"},"cwd":"/tmp"}' | claude-gatekeeper --debug
 
-# In settings.json, change the command to:
-"command": "claude-gatekeeper --debug"
+# When using the plugin, set the command in hooks/hooks.json to:
+"command": "${CLAUDE_PLUGIN_ROOT}/bin/claude-gatekeeper --debug"
 ```
 
 Debug output goes to stderr (visible in Claude Code verbose mode via `Ctrl+R`).
@@ -190,10 +177,11 @@ Debug output goes to stderr (visible in Claude Code verbose mode via `Ctrl+R`).
 ## Development
 
 ```bash
-make build     # Build to ./bin/claude-gatekeeper
-make test      # Run all tests with race detector
-make lint      # Run golangci-lint
-make clean     # Remove build artifacts
+make build        # Build to ./bin/claude-gatekeeper
+make test         # Run all tests with race detector
+make lint         # Run golangci-lint
+make plugin-test  # Show command to test as a plugin
+make clean        # Remove build artifacts
 ```
 
 ## License

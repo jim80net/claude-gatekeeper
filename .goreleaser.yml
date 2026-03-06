@@ -18,6 +18,11 @@ builds:
 archives:
   - format: tar.gz
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - hooks/**
+      - .claude-plugin/**
+      - README.md
+      - LICENSE
     format_overrides:
       - goos: windows
         format: zip
