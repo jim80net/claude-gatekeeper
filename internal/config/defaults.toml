@@ -1,0 +1,290 @@
+# Claude Gatekeeper — Default Rules
+#
+# Rules are evaluated together. Deny ALWAYS wins over allow.
+# All regex patterns are PCRE2-compatible (via regexp2).
+# Use TOML single-quoted strings (') to avoid regex escaping issues.
+#
+# Each commented-out "env-prefix aware" variant prepends (\w+=\S+\s+)*
+# to also match commands like: FOO=bar git reset --hard
+
+# =============================================================================
+# DENY — Destructive git operations
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = 'git\s+reset\s+--hard'
+decision = "deny"
+reason = "Destructive: git reset --hard"
+# env-prefix aware:
+# input = '(\w+=\S+\s+)*git\s+reset\s+--hard'
+
+[[rules]]
+tool   = 'Bash'
+input  = 'git\s+clean\s+(-[a-zA-Z]*f|--force)'
+decision = "deny"
+reason = "Destructive: git clean with force"
+# env-prefix aware:
+# input = '(\w+=\S+\s+)*git\s+clean\s+(-[a-zA-Z]*f|--force)'
+
+[[rules]]
+tool   = 'Bash'
+input  = 'git\s+push\s+(-[a-zA-Z]*f|--force|--force-with-lease)'
+decision = "deny"
+reason = "Destructive: git force push"
+# env-prefix aware:
+# input = '(\w+=\S+\s+)*git\s+push\s+(-[a-zA-Z]*f|--force|--force-with-lease)'
+
+[[rules]]
+tool   = 'Bash'
+input  = 'git\s+commit\s+.*--amend'
+decision = "deny"
+reason = "Destructive: git commit --amend"
+# env-prefix aware:
+# input = '(\w+=\S+\s+)*git\s+commit\s+.*--amend'
+
+# =============================================================================
+# DENY — Push to main/master (explicit branch name in command)
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = 'git\s+push\s+\S+\s+(main|master)\b'
+decision = "deny"
+reason = "Push to protected branch (main/master)"
+
+# =============================================================================
+# DENY — Push to main/master (implicit — current branch IS main/master)
+#
+# Catches: git push, git push origin, git push --quiet origin
+# Does NOT fire when the command already names main/master (caught above).
+# The precondition shells out to `git branch --show-current`.
+# =============================================================================
+
+[[rules]]
+tool              = 'Bash'
+input             = '\bgit\s+push\b(?!.*\b(main|master)\b)'
+precondition      = 'git branch --show-current'
+precondition_match = '^(main|master)$'
+decision          = "deny"
+reason            = "Implicit push to protected branch (currently on main/master)"
+
+# =============================================================================
+# DENY — Recursive delete
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = '\brm\s+(-[a-zA-Z]*r|--recursive)'
+decision = "deny"
+reason = "Destructive: recursive delete (rm -r)"
+# env-prefix aware:
+# input = '(\w+=\S+\s+)*\brm\s+(-[a-zA-Z]*r|--recursive)'
+
+# =============================================================================
+# DENY — sed/awk (force the Edit tool)
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = '\b(?:sed|awk)\s'
+decision = "deny"
+reason = "Use the Edit tool instead of sed/awk"
+
+# =============================================================================
+# DENY — Destructive SQL
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = '(?i)\b(DROP|TRUNCATE|DELETE\s+FROM)\b'
+decision = "deny"
+reason = "Destructive SQL operation"
+
+# =============================================================================
+# DENY — npm (use pnpm)
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = '\bnpm\s'
+decision = "deny"
+reason = "Use pnpm instead of npm"
+
+# =============================================================================
+# DENY — Credential / secret file reads
+# =============================================================================
+
+[[rules]]
+tool   = 'Read'
+input  = '(^|/)\.env(\..*)?$|\.envrc$|key\.json$|id_rsa|id_ed25519|\.pem$|credentials$|\.secret'
+decision = "deny"
+reason = "Credential/secret file access denied"
+
+[[rules]]
+tool   = 'Bash'
+input  = '(?:cat|less|more|head|tail|bat)\s+\S*(\.env\b|\.envrc|key\.json|id_rsa|id_ed25519|\.pem\b|credentials\b|\.secret)'
+decision = "deny"
+reason = "Reading credential/secret file via shell"
+
+# =============================================================================
+# ALLOW — Git (non-destructive, after deny rules filter the rest)
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = '(?:^|[|;&]\s*)git\s'
+decision = "allow"
+reason = "Git operations (non-destructive)"
+# env-prefix aware:
+# input = '(?:^|(\w+=\S+\s+)*)git\s'
+
+# =============================================================================
+# ALLOW — GitHub CLI
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = '(?:^|[|;&]\s*)gh\s'
+decision = "allow"
+reason = "GitHub CLI"
+# env-prefix aware:
+# input = '(?:^|(\w+=\S+\s+)*)gh\s'
+
+# =============================================================================
+# ALLOW — Docker
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = '(?:^|[|;&]\s*)(?:docker|docker-compose|docker compose)\s'
+decision = "allow"
+reason = "Docker"
+
+# =============================================================================
+# ALLOW — Python toolchain
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = '(?:^|[|;&]\s*)(?:uv|pip|pip3|pytest|python|python3|ruff|mypy|black|isort|poetry)\s'
+decision = "allow"
+reason = "Python toolchain"
+
+# =============================================================================
+# ALLOW — Safe shell utilities
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = '(?:^|[|;&]\s*)(?:ls|find|mkdir|curl|wget|diff|wc|cat|head|tail|echo|printf|touch|cp|mv|chmod|which|env|sort|uniq|tee|xargs|tr|cut|basename|dirname|realpath|readlink|stat|file|date|whoami|hostname|uname|id|test|true|false|yes|seq|comm|paste|column|fmt|fold|expand|unexpand|nl|od|hexdump|md5sum|sha256sum|sha1sum|b2sum|cksum|nproc|getconf|free|df|du|uptime)(?:\s|$)'
+decision = "allow"
+reason = "Safe shell utility"
+
+# =============================================================================
+# ALLOW — Go toolchain
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = '(?:^|[|;&]\s*)(?:go|gofmt|goimports|golangci-lint|staticcheck|dlv|gopls|govulncheck)(?:\s|$)'
+decision = "allow"
+reason = "Go toolchain"
+
+# =============================================================================
+# ALLOW — pnpm
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = '(?:^|[|;&]\s*)pnpm\s'
+decision = "allow"
+reason = "pnpm package manager"
+
+# =============================================================================
+# ALLOW — Build systems
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = '(?:^|[|;&]\s*)(?:make|cmake|ninja|gradle|gradlew|cargo|mvn|bazel|buck|scons|meson)(?:\s|$)'
+decision = "allow"
+reason = "Build system"
+
+# =============================================================================
+# ALLOW — OpenSSL
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = '(?:^|[|;&]\s*)openssl\s'
+decision = "allow"
+reason = "OpenSSL"
+
+# =============================================================================
+# ALLOW — JavaScript / TypeScript dev tools
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = '(?:^|[|;&]\s*)(?:node|npx|tsc|eslint|prettier|vitest|jest|playwright|webpack|vite|esbuild|rollup|turbo|tsx|ts-node|bunx|bun)(?:\s|$)'
+decision = "allow"
+reason = "JavaScript/TypeScript tools"
+
+# =============================================================================
+# ALLOW — timeout wrapper (often prefixed to other commands)
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = '^timeout\s'
+decision = "allow"
+reason = "Timeout wrapper"
+
+# =============================================================================
+# ALLOW — Common developer utilities
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = '(?:^|[|;&]\s*)(?:jq|yq|tree|ag|rg|fzf|bat|fd|eza|htop|top|ps|kill|lsof|nc|dig|nslookup|ping|traceroute|ssh-keygen|gpg|base64|tar|gzip|gunzip|zip|unzip|xz)(?:\s|$)'
+decision = "allow"
+reason = "Developer utility"
+
+# =============================================================================
+# ALLOW — Infrastructure / cloud tools
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = '(?:^|[|;&]\s*)(?:terraform|tf|terragrunt|kubectl|helm|pulumi|aws|gcloud|az)(?:\s|$)'
+decision = "allow"
+reason = "Infrastructure/cloud tool"
+
+# =============================================================================
+# ALLOW — Non-Bash tools (file browsing, editing, web, agents)
+# =============================================================================
+
+[[rules]]
+tool   = 'Read|Glob|Grep'
+input  = '.*'
+decision = "allow"
+reason = "File browsing"
+
+[[rules]]
+tool   = 'Edit|Write'
+input  = '.*'
+decision = "allow"
+reason = "File editing"
+
+[[rules]]
+tool   = 'WebFetch|WebSearch'
+input  = '.*'
+decision = "allow"
+reason = "Web access"
+
+[[rules]]
+tool   = 'Agent'
+input  = '.*'
+decision = "allow"
+reason = "Subagent"

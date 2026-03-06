@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "claude-gatekeeper",
+            "timeout": 10,
+            "statusMessage": "Checking permissions..."
+          }
+        ]
+      }
+    ]
+  }
+}
