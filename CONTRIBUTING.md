@@ -41,9 +41,28 @@ make build
 echo '{"tool_name":"Bash","tool_input":{"command":"git status"},"cwd":"/tmp"}' | ./bin/claude-gatekeeper --debug
 ```
 
+## Commit conventions
+
+This project uses [Conventional Commits](https://www.conventionalcommits.org/) with [release-please](https://github.com/googleapis/release-please) for automated versioning.
+
+| Prefix | Version bump | Example |
+|--------|-------------|---------|
+| `fix:` | Patch (1.0.x) | `fix: handle empty tool input` |
+| `feat:` | Minor (1.x.0) | `feat: add precondition timeout config` |
+| `feat!:` or `BREAKING CHANGE:` | Major (x.0.0) | `feat!: rename config file` |
+| `chore:`, `docs:`, `ci:`, `test:` | No release | `docs: update README` |
+
 ## Release process
 
-Tags trigger goreleaser via GitHub Actions (when configured). To test locally:
+Releases are automated via GitHub Actions:
+
+1. Push conventional commits to `main`
+2. release-please creates/updates a **Release PR** with changelog and version bump
+3. Merge the Release PR → release-please tags and creates a GitHub Release
+4. goreleaser builds platform archives and attaches them to the release
+5. build.yml rebuilds `dist/` binaries in the repo for marketplace installs
+
+To test goreleaser locally:
 
 ```bash
 goreleaser release --snapshot --clean
