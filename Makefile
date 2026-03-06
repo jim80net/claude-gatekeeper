@@ -17,36 +17,17 @@ lint:
 install: build
 	mkdir -p $(INSTALL_DIR)
 	cp bin/$(BINARY) $(INSTALL_DIR)/$(BINARY)
-	@echo ""
-	@echo "Installed $(BINARY) to $(INSTALL_DIR)/$(BINARY)"
-	@echo ""
-	@echo "Add the following to ~/.claude/settings.json (or .claude/settings.json):"
-	@echo ""
-	@echo '  "hooks": {'
-	@echo '    "PreToolUse": ['
-	@echo '      {'
-	@echo '        "matcher": "",'
-	@echo '        "hooks": ['
-	@echo '          {'
-	@echo '            "type": "command",'
-	@echo '            "command": "$(INSTALL_DIR)/$(BINARY)",'
-	@echo '            "timeout": 10'
-	@echo '          }'
-	@echo '        ]'
-	@echo '      }'
-	@echo '    ]'
-	@echo '  }'
+	$(INSTALL_DIR)/$(BINARY) setup --binary $(INSTALL_DIR)/$(BINARY)
 	@echo ""
 	@echo "To migrate existing permissions:"
 	@echo "  $(INSTALL_DIR)/$(BINARY) migrate"
 	@echo ""
-	@echo "For debug mode, change the command to:"
-	@echo "  $(INSTALL_DIR)/$(BINARY) --debug"
+	@echo "For debug mode, edit ~/.claude/settings.json and append --debug to the command."
 
 uninstall:
+	$(INSTALL_DIR)/$(BINARY) uninstall || true
 	rm -f $(INSTALL_DIR)/$(BINARY)
-	@echo "Removed $(INSTALL_DIR)/$(BINARY)"
-	@echo "Remember to remove the hooks config from settings.json."
+	@echo "Uninstall complete."
 
 clean:
 	rm -rf bin/

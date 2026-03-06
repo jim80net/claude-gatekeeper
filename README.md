@@ -26,11 +26,17 @@ make install
 
 ### GitHub Releases
 
-Download a pre-built binary from [Releases](https://github.com/jim80net/claude-gatekeeper/releases) and place it on your `$PATH` or in `~/.claude/hooks/`.
+Download a pre-built binary from [Releases](https://github.com/jim80net/claude-gatekeeper/releases), place it on your `$PATH`, then run:
+
+```bash
+claude-gatekeeper setup
+```
 
 ## Configure Claude Code
 
-Add to `~/.claude/settings.json` (or `.claude/settings.json` per-project):
+`make install` (and `claude-gatekeeper setup`) automatically registers the PreToolUse hook in `~/.claude/settings.json`. A backup is created before any changes.
+
+To configure manually instead, add to `~/.claude/settings.json`:
 
 ```json
 {

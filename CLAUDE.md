@@ -9,6 +9,7 @@ PreToolUse permission hook for Claude Code. Written in Go for fast startup.
 - `internal/config/` — Loads TOML rules from embedded defaults + `~/.claude/.gatekeeper.toml` + `.claude/gatekeeper.toml`
 - `internal/engine/` — Compiles PCRE2 regexes (via regexp2), evaluates rules, deny-always-wins
 - `internal/migrate/` — Converts `settings.json` glob permissions to TOML regex rules
+- `internal/setup/` — Registers/unregisters the hook in `~/.claude/settings.json` (with backup)
 - `hooks/hooks.json` — Claude Code plugin hook definition
 
 ## Key design decisions

@@ -18,6 +18,7 @@ import (
 	"github.com/jim80net/claude-gatekeeper/internal/engine"
 	"github.com/jim80net/claude-gatekeeper/internal/migrate"
 	"github.com/jim80net/claude-gatekeeper/internal/protocol"
+	"github.com/jim80net/claude-gatekeeper/internal/setup"
 )
 
 var version = "dev"
@@ -32,6 +33,10 @@ func run(stdin io.Reader, stdout io.Writer, args []string) int {
 		switch args[0] {
 		case "migrate":
 			return runMigrate(args[1:])
+		case "setup":
+			return runSetup(args[1:])
+		case "uninstall":
+			return runUninstall()
 		case "version":
 			fmt.Fprintf(os.Stderr, "claude-gatekeeper %s\n", version)
 			return 0
@@ -92,6 +97,39 @@ func run(stdin io.Reader, stdout io.Writer, args []string) int {
 		if err := protocol.WriteOutput(stdout, output); err != nil {
 			protocol.Debugf("error writing output: %v", err)
 		}
+	}
+	return 0
+}
+
+func runSetup(args []string) int {
+	fs := flag.NewFlagSet("setup", flag.ExitOnError)
+	fs.SetOutput(os.Stderr)
+	binaryPath := fs.String("binary", "", "Absolute path to the installed binary (auto-detected if omitted)")
+	if err := fs.Parse(args); err != nil {
+		return 1
+	}
+
+	bin := *binaryPath
+	if bin == "" {
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: cannot determine binary path: %v\n", err)
+			return 1
+		}
+		bin = exe
+	}
+
+	if err := setup.Install(bin); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runUninstall() int {
+	if err := setup.Uninstall(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
 	}
 	return 0
 }
