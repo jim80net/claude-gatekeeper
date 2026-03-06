@@ -1,6 +1,5 @@
 ---
 description: Show gatekeeper rules summary and configuration help
-disable-model-invocation: true
 ---
 
 # claude-gatekeeper
