@@ -25,6 +25,45 @@ type Rule struct {
 	PreconditionMatch string `toml:"precondition_match,omitempty"`
 }
 
+// GlobalConfigPath returns the path to ~/.claude/gatekeeper.toml.
+func GlobalConfigPath() string {
+	homeDir, _ := os.UserHomeDir()
+	if homeDir == "" {
+		return ""
+	}
+	return filepath.Join(homeDir, ".claude", "gatekeeper.toml")
+}
+
+// EnsureGlobalConfig copies templatePath to ~/.claude/gatekeeper.toml if the
+// global config does not already exist. This provides seamless defaults on
+// first run when installed as a plugin.
+func EnsureGlobalConfig(templatePath string) error {
+	dest := GlobalConfigPath()
+	if dest == "" {
+		return fmt.Errorf("cannot determine home directory")
+	}
+
+	if _, err := os.Stat(dest); err == nil {
+		return nil // already exists
+	}
+
+	data, err := os.ReadFile(templatePath)
+	if err != nil {
+		return fmt.Errorf("reading template: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		return fmt.Errorf("creating directory: %w", err)
+	}
+
+	if err := os.WriteFile(dest, data, 0644); err != nil {
+		return fmt.Errorf("writing config: %w", err)
+	}
+
+	protocol.Debugf("installed default config: %s", dest)
+	return nil
+}
+
 // Load builds the final config by layering global and project files.
 // projectDir is typically the cwd from the hook input.
 func Load(projectDir string) (*Config, error) {

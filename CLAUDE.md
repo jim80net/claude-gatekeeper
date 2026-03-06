@@ -26,7 +26,7 @@ Test as a plugin: `claude --plugin-dir .`
 
 - **PCRE2 regex** via `github.com/dlclark/regexp2` (pure Go, no cgo)
 - **TOML config** with single-quoted strings for zero-escape regex
-- **No baked-in rules** — all rules come from config files; `gatekeeper.toml` ships as a template
+- **No baked-in rules** — all rules come from config files; `gatekeeper.toml` auto-copied to `~/.claude/` on first run
 - **Deny always wins** across all config layers
 - **Abstain on any error** or no config (exit 0, empty stdout)
 - **stdout is the protocol** — all debug/error output goes to stderr
@@ -43,6 +43,6 @@ make install      # Build + install to ~/.claude/hooks/ (standalone mode)
 
 ## Config files
 
-- `gatekeeper.toml` — Shipped default rules template (copy to `~/.claude/gatekeeper.toml` via `make init-config`)
+- `gatekeeper.toml` — Shipped default rules (auto-copied to `~/.claude/gatekeeper.toml` on first run)
 - `~/.claude/gatekeeper.toml` — User global config (deny destructive ops, allow safe tools)
 - `.claude/gatekeeper.toml` — Per-project overrides
