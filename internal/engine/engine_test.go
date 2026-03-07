@@ -509,6 +509,8 @@ func TestDefaultRules(t *testing.T) {
 		{"deny rm -rf", bashInput("rm -rf /tmp/stuff"), ptr(protocol.Deny)},
 		{"deny rm -r", bashInput("rm -r dir/"), ptr(protocol.Deny)},
 		{"deny rm --recursive", bashInput("rm --recursive dir/"), ptr(protocol.Deny)},
+		{"allow rm files in dist/", bashInput("rm dist/main.js dist/app.wasm"), ptr(protocol.Allow)},
+		{"allow rm files in build/", bashInput("rm build/output.bin"), ptr(protocol.Allow)},
 		{"deny sed", bashInput("sed -i 's/foo/bar/' file.txt"), ptr(protocol.Deny)},
 		{"deny awk", bashInput("awk '{print $1}' file.txt"), ptr(protocol.Deny)},
 		{"deny DROP TABLE", bashInput("psql -c 'DROP TABLE users'"), ptr(protocol.Deny)},
