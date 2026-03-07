@@ -99,11 +99,11 @@ reason = "Remove files in build output directory"
 
 [[rules]]
 tool   = 'Bash'
-input  = '\brm\s+(-[a-zA-Z]*r|--recursive)\S*\s+(?!(\./?)?(dist|build|out|\.next|node_modules|__pycache__|\.cache|\.turbo|target|\.parcel-cache)(\s|$|&&|\||;))'
+input  = '\brm\s+(-[a-zA-Z]*r|--recursive)\S*\s+(?!(\./?)?(dist|build|out|\.next|node_modules|__pycache__|\.cache|\.turbo|target|\.parcel-cache)($|&&|\||;))'
 decision = "deny"
 reason = "Destructive: recursive delete (rm -r)"
 # env-prefix aware:
-# input = '(\w+=\S+\s+)*\brm\s+(-[a-zA-Z]*r|--recursive)\S*\s+(?!(\./?)?(dist|build|out|\.next|node_modules|__pycache__|\.cache|\.turbo|target|\.parcel-cache)(\s|$|&&|\||;))'
+# input = '(\w+=\S+\s+)*\brm\s+(-[a-zA-Z]*r|--recursive)\S*\s+(?!(\./?)?(dist|build|out|\.next|node_modules|__pycache__|\.cache|\.turbo|target|\.parcel-cache)($|&&|\||;))'
 
 # =============================================================================
 # DENY — sed/awk (force the Edit tool)
