@@ -207,19 +207,31 @@ func ExtractCDPrefix(command string) string {
 // heredocStartRe matches heredoc markers: <<EOF, <<'EOF', <<"EOF", <<-EOF, etc.
 var heredocStartRe = regexp.MustCompile(`<<-?\s*(?:'(\w+)'|"(\w+)"|(\w+))`)
 
+// shellHeredocRe matches a shell interpreter receiving a heredoc as stdin.
+// This detects patterns like: bash <<'EOF', sh <<EOF, python <<'EOF', etc.
+// These heredocs contain executable code and must NOT be stripped.
+var shellHeredocRe = regexp.MustCompile(`(?:^|[;&|]\s*)(?:bash|sh|dash|zsh|ksh|fish|python[23]?|ruby|perl|node|php)\s+<<`)
+
 // StripHeredocs removes heredoc bodies from a Bash command string.
 // This prevents deny rules from matching against data content such as
 // commit messages or PR descriptions that happen to contain denied patterns.
+// However, heredocs fed as stdin to shell interpreters (bash, sh, python, etc.)
+// are preserved because they contain executable code that deny rules must check.
 func StripHeredocs(command string) string {
 	lines := strings.Split(command, "\n")
 	var result []string
 	var delim string
+	keepBody := false
 
 	for _, line := range lines {
 		if delim != "" {
-			// Inside a heredoc body — skip lines until closing delimiter.
+			if keepBody {
+				result = append(result, line)
+			}
+			// Inside a heredoc body — skip/keep lines until closing delimiter.
 			if strings.TrimSpace(line) == delim {
 				delim = ""
+				keepBody = false
 			}
 			continue
 		}
@@ -232,6 +244,10 @@ func StripHeredocs(command string) string {
 					delim = g
 					break
 				}
+			}
+			// If a shell interpreter is receiving this heredoc, keep the body.
+			if delim != "" && shellHeredocRe.MatchString(line) {
+				keepBody = true
 			}
 		}
 

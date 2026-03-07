@@ -273,6 +273,31 @@ func TestStripHeredocs(t *testing.T) {
 			command: "cat <<EOF\nheredoc body\nEOF\necho after",
 			want:    "cat <<EOF\necho after",
 		},
+		{
+			name:    "bash heredoc preserved",
+			command: "bash <<'EOF'\nrm -rf /\nEOF",
+			want:    "bash <<'EOF'\nrm -rf /\nEOF",
+		},
+		{
+			name:    "sh heredoc preserved",
+			command: "sh <<EOF\nrm -rf /tmp/stuff\nEOF",
+			want:    "sh <<EOF\nrm -rf /tmp/stuff\nEOF",
+		},
+		{
+			name:    "python heredoc preserved",
+			command: "python3 <<'SCRIPT'\nimport os; os.system('rm -rf /')\nSCRIPT",
+			want:    "python3 <<'SCRIPT'\nimport os; os.system('rm -rf /')\nSCRIPT",
+		},
+		{
+			name:    "pipe to bash heredoc preserved",
+			command: "echo something; bash <<'EOF'\nrm -rf /\nEOF",
+			want:    "echo something; bash <<'EOF'\nrm -rf /\nEOF",
+		},
+		{
+			name:    "cat heredoc still stripped",
+			command: "cat <<'EOF'\nrm -rf /\nEOF",
+			want:    "cat <<'EOF'",
+		},
 	}
 
 	for _, tt := range tests {
@@ -317,6 +342,21 @@ func TestHeredocContentDoesNotTriggerDeny(t *testing.T) {
 		{
 			name: "actual rm -rf still denied",
 			cmd:  "rm -rf /tmp/stuff",
+			want: ptr(protocol.Deny),
+		},
+		{
+			name: "bash heredoc with rm -rf denied",
+			cmd:  "bash <<'EOF'\nrm -rf /\nEOF",
+			want: ptr(protocol.Deny),
+		},
+		{
+			name: "sh heredoc with git reset --hard denied",
+			cmd:  "sh <<'EOF'\ngit reset --hard\nEOF",
+			want: ptr(protocol.Deny),
+		},
+		{
+			name: "python heredoc with DROP TABLE denied",
+			cmd:  "python3 <<'EOF'\nDROP TABLE users\nEOF",
 			want: ptr(protocol.Deny),
 		},
 	}
