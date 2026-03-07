@@ -232,6 +232,120 @@ func TestExtractCDPrefix(t *testing.T) {
 	}
 }
 
+func TestStripHeredocs(t *testing.T) {
+	tests := []struct {
+		name    string
+		command string
+		want    string
+	}{
+		{
+			name:    "no heredoc",
+			command: "git status",
+			want:    "git status",
+		},
+		{
+			name:    "unquoted heredoc",
+			command: "git commit -m \"$(cat <<EOF\nThis mentions rm -rf dist\nEOF\n)\"",
+			want:    "git commit -m \"$(cat <<EOF\n)\"",
+		},
+		{
+			name:    "single-quoted heredoc",
+			command: "git commit -m \"$(cat <<'EOF'\nrm -rf /tmp/stuff\ngit reset --hard\nEOF\n)\"",
+			want:    "git commit -m \"$(cat <<'EOF'\n)\"",
+		},
+		{
+			name:    "double-quoted heredoc",
+			command: "gh pr create --body \"$(cat <<\"EOF\"\nDROP TABLE users\nEOF\n)\"",
+			want:    "gh pr create --body \"$(cat <<\"EOF\"\n)\"",
+		},
+		{
+			name:    "heredoc with dash",
+			command: "cat <<-MARKER\n\tindented content with rm -rf\nMARKER",
+			want:    "cat <<-MARKER",
+		},
+		{
+			name:    "multiline command without heredoc",
+			command: "echo hello &&\ngit push",
+			want:    "echo hello &&\ngit push",
+		},
+		{
+			name:    "command after heredoc preserved",
+			command: "cat <<EOF\nheredoc body\nEOF\necho after",
+			want:    "cat <<EOF\necho after",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := engine.StripHeredocs(tt.command)
+			if got != tt.want {
+				t.Errorf("StripHeredocs:\n  input: %q\n  got:   %q\n  want:  %q", tt.command, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHeredocContentDoesNotTriggerDeny(t *testing.T) {
+	eng := newEngine(t, []config.Rule{
+		{Tool: "Bash", Input: `\brm\s+(-[a-zA-Z]*r|--recursive)`, Decision: "deny", Reason: "recursive delete"},
+		{Tool: "Bash", Input: `git\s+reset\s+--hard`, Decision: "deny", Reason: "hard reset"},
+		{Tool: "Bash", Input: `(?i)\b(DROP|TRUNCATE)\b`, Decision: "deny", Reason: "destructive SQL"},
+		{Tool: "Bash", Input: `(?:^|[|;&]\s*)git\s`, Decision: "allow", Reason: "git"},
+		{Tool: "Bash", Input: `(?:^|[|;&]\s*)gh\s`, Decision: "allow", Reason: "gh"},
+	})
+
+	tests := []struct {
+		name string
+		cmd  string
+		want *protocol.Decision
+	}{
+		{
+			name: "commit message mentioning rm -rf",
+			cmd:  "git commit -m \"$(cat <<'EOF'\nfeat: allow rm -rf on build dirs\nEOF\n)\"",
+			want: ptr(protocol.Allow),
+		},
+		{
+			name: "PR body mentioning DROP TABLE",
+			cmd:  "gh pr create --body \"$(cat <<'EOF'\nThis fixes the DROP TABLE issue\nEOF\n)\"",
+			want: ptr(protocol.Allow),
+		},
+		{
+			name: "commit message mentioning git reset --hard",
+			cmd:  "git commit -m \"$(cat <<'EOF'\nRevert git reset --hard behavior\nEOF\n)\"",
+			want: ptr(protocol.Allow),
+		},
+		{
+			name: "actual rm -rf still denied",
+			cmd:  "rm -rf /tmp/stuff",
+			want: ptr(protocol.Deny),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := eng.Evaluate(bashInput(tt.cmd))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.want == nil {
+				if out != nil {
+					t.Errorf("expected abstain, got %s", out.HookSpecificOutput.PermissionDecision)
+				}
+				return
+			}
+			if out == nil {
+				t.Fatalf("expected %s, got abstain", *tt.want)
+			}
+			if out.HookSpecificOutput.PermissionDecision != *tt.want {
+				t.Errorf("got %s (%s), want %s",
+					out.HookSpecificOutput.PermissionDecision,
+					out.HookSpecificOutput.PermissionDecisionReason,
+					*tt.want)
+			}
+		})
+	}
+}
+
 func TestToolMatching(t *testing.T) {
 	eng := newEngine(t, []config.Rule{
 		{Tool: "Read|Glob|Grep", Input: ".*", Decision: "allow", Reason: "browsing"},

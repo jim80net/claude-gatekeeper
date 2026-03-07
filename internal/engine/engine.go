@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -93,6 +94,16 @@ func (e *Engine) Evaluate(input *protocol.HookInput) (*protocol.HookOutput, erro
 		}
 	}
 
+	// For Bash commands, strip heredoc bodies so deny rules don't match
+	// against data content (e.g., commit messages mentioning "rm -rf").
+	matchStr := inputStr
+	if input.ToolName == "Bash" {
+		matchStr = StripHeredocs(inputStr)
+		if e.debug && matchStr != inputStr {
+			protocol.Debugf("  stripped heredocs: %q", matchStr)
+		}
+	}
+
 	var denyReasons []string
 	anyAllow := false
 
@@ -102,7 +113,7 @@ func (e *Engine) Evaluate(input *protocol.HookInput) (*protocol.HookOutput, erro
 			continue
 		}
 
-		inputMatch, err := rule.InputRegex.MatchString(inputStr)
+		inputMatch, err := rule.InputRegex.MatchString(matchStr)
 		if err != nil || !inputMatch {
 			continue
 		}
@@ -191,6 +202,43 @@ func ExtractCDPrefix(command string) string {
 		return strings.TrimSpace(command[:idx+2])
 	}
 	return ""
+}
+
+// heredocStartRe matches heredoc markers: <<EOF, <<'EOF', <<"EOF", <<-EOF, etc.
+var heredocStartRe = regexp.MustCompile(`<<-?\s*(?:'(\w+)'|"(\w+)"|(\w+))`)
+
+// StripHeredocs removes heredoc bodies from a Bash command string.
+// This prevents deny rules from matching against data content such as
+// commit messages or PR descriptions that happen to contain denied patterns.
+func StripHeredocs(command string) string {
+	lines := strings.Split(command, "\n")
+	var result []string
+	var delim string
+
+	for _, line := range lines {
+		if delim != "" {
+			// Inside a heredoc body — skip lines until closing delimiter.
+			if strings.TrimSpace(line) == delim {
+				delim = ""
+			}
+			continue
+		}
+
+		// Check if this line introduces a heredoc.
+		if m := heredocStartRe.FindStringSubmatch(line); m != nil {
+			// Capture group 1, 2, or 3 holds the delimiter word.
+			for _, g := range m[1:] {
+				if g != "" {
+					delim = g
+					break
+				}
+			}
+		}
+
+		result = append(result, line)
+	}
+
+	return strings.Join(result, "\n")
 }
 
 func makeOutput(decision protocol.Decision, reason string) *protocol.HookOutput {
