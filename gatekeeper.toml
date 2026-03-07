@@ -79,6 +79,18 @@ decision          = "deny"
 reason            = "Implicit push to protected branch (currently on main/master)"
 
 # =============================================================================
+# ALLOW — Remove files in build output directories (non-recursive)
+#
+# Allows: rm dist/main.js, rm build/app.wasm, etc.
+# =============================================================================
+
+[[rules]]
+tool   = 'Bash'
+input  = '\brm\s+(?!.*(-[a-zA-Z]*r|--recursive)).*(\./?)?(dist|build|out|\.next|node_modules|__pycache__|\.cache|\.turbo|target|\.parcel-cache)/'
+decision = "allow"
+reason = "Remove files in build output directory"
+
+# =============================================================================
 # DENY — Recursive delete (except known build output directories)
 #
 # Allows: rm -rf dist, rm -rf ./build, rm -r __pycache__, etc.
