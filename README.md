@@ -17,7 +17,7 @@ Claude Code's built-in permission globs (`Bash(git add:*)`) can't match env-pref
 /plugin install claude-gatekeeper@jim80net-plugins
 ```
 
-Pre-built binaries for Linux, macOS, and Windows (amd64/arm64) are included in the repo. Default rules are auto-copied to `~/.claude/gatekeeper.toml` on first run.
+Pre-built binaries for Linux, macOS, and Windows (amd64/arm64) are auto-downloaded from GitHub Releases on first run. Default rules are auto-copied to `~/.claude/gatekeeper.toml` on first run.
 
 **Windows (PowerShell)**: If you're on native Windows without Git Bash, edit `hooks/hooks.json` and change the command to:
 ```
@@ -169,7 +169,8 @@ Debug output goes to stderr (visible in Claude Code verbose mode via `Ctrl+R`).
 ## Development
 
 ```bash
-make build        # Build to ./bin/claude-gatekeeper
+make build        # Build from source to ./bin/claude-gatekeeper
+make download     # Download pre-built binary from GitHub Releases
 make test         # Run all tests with race detector
 make lint         # Run golangci-lint
 make plugin-test  # Show command to test as a plugin

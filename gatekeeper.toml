@@ -116,12 +116,15 @@ decision = "deny"
 reason = "Use the Edit tool instead of sed/awk"
 
 # =============================================================================
-# DENY — Destructive SQL
+# DENY — Destructive SQL (only when a database CLI tool is in the command)
+#
+# Uses a lookahead to require a known database CLI anywhere in the command,
+# preventing false positives from English words like "drop" in commit messages.
 # =============================================================================
 
 [[rules]]
 tool   = 'Bash'
-input  = '(?i)\b(DROP|TRUNCATE|DELETE\s+FROM)\b'
+input  = '(?si)(?=.*\b(?:psql|mysql|mariadb|sqlite3|mongosh|mongo|redis-cli|cqlsh|duckdb|cockroach|mycli|pgcli|litecli)\b).*\b(DROP|TRUNCATE|DELETE\s+FROM)\b'
 decision = "deny"
 reason = "Destructive SQL operation"
 

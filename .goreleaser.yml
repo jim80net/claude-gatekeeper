@@ -23,6 +23,7 @@ archives:
       - .claude-plugin/**
       - bin/run.sh
       - bin/run.ps1
+      - bin/install.sh
       - gatekeeper.toml
       - README.md
       - LICENSE

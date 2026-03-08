@@ -3,23 +3,21 @@ set -euo pipefail
 
 PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
-ARCH="$(uname -m)"
-case "$ARCH" in
-  x86_64)        ARCH="amd64" ;;
-  aarch64|arm64) ARCH="arm64" ;;
-esac
-
-# 1. Pre-built platform binary (from CI or goreleaser).
-BINARY="$PLUGIN_ROOT/dist/claude-gatekeeper-${OS}-${ARCH}"
+# 1. Pre-built binary (from make build or install.sh download).
+BINARY="$PLUGIN_ROOT/bin/claude-gatekeeper"
 if [ -x "$BINARY" ]; then
   exec "$BINARY" "$@"
 fi
 
-# 2. Local build (from make build).
-BINARY="$PLUGIN_ROOT/bin/claude-gatekeeper"
-if [ -x "$BINARY" ]; then
-  exec "$BINARY" "$@"
+# 2. Auto-download from GitHub Releases.
+if [ -x "$PLUGIN_ROOT/bin/install.sh" ]; then
+  echo "Downloading claude-gatekeeper binary..." >&2
+  if "$PLUGIN_ROOT/bin/install.sh" 2>&1 >&2; then
+    if [ -x "$BINARY" ]; then
+      exec "$BINARY" "$@"
+    fi
+  fi
+  echo "Download failed, trying go build..." >&2
 fi
 
 # 3. Fallback: build from source (requires Go).
