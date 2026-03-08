@@ -1,6 +1,6 @@
 {
   "name": "claude-gatekeeper",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "PCRE2 regex-based permission gatekeeper for Claude Code tool calls",
   "repository": "https://github.com/jim80net/claude-gatekeeper",
   "license": "MIT"
