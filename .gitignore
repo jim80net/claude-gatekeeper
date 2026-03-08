@@ -1,6 +1,7 @@
 bin/*
 !bin/run.sh
 !bin/run.ps1
+!bin/install.sh
 .claude/settings.local.json
 
 # OS
