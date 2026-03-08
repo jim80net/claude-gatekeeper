@@ -18,10 +18,10 @@ PreToolUse permission hook for Claude Code. Written in Go for fast startup.
 This project is a Claude Code plugin. Key files:
 - `.claude-plugin/plugin.json` — manifest (no `hooks` field; `hooks/hooks.json` is auto-loaded)
 - `hooks/hooks.json` — hook command using `${CLAUDE_PLUGIN_ROOT}/bin/run.sh`
-- `bin/run.sh` — wrapper script that selects the right platform binary (Linux/macOS/WSL)
-- `bin/run.ps1` — PowerShell wrapper for native Windows
-- `dist/` — pre-built binaries for linux/darwin/windows amd64/arm64 (committed by CI)
-- `bin/claude-gatekeeper` — local dev binary (from `make build`)
+- `bin/run.sh` — wrapper: runs binary → auto-downloads from GitHub Releases → builds from source
+- `bin/run.ps1` — PowerShell wrapper for native Windows (same fallback chain)
+- `bin/install.sh` — downloads the correct platform binary from GitHub Releases
+- `bin/claude-gatekeeper` — binary (from `make build` or `make download`)
 
 Test as a plugin: `claude --plugin-dir .`
 
@@ -38,7 +38,8 @@ Test as a plugin: `claude --plugin-dir .`
 ## Build and test
 
 ```bash
-make build        # → bin/claude-gatekeeper
+make build        # → bin/claude-gatekeeper (requires Go)
+make download     # Download pre-built binary from GitHub Releases
 make test         # Race-enabled tests
 make plugin-test  # Show command to test as a plugin
 make install      # Build + install to ~/.claude/hooks/ (standalone mode)

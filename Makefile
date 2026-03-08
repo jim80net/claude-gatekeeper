@@ -5,7 +5,7 @@ CONFIG_DST := $(HOME)/.claude/gatekeeper.toml
 VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS    := -s -w -X main.version=$(VERSION)
 
-.PHONY: build test lint install uninstall clean plugin-test init-config
+.PHONY: build test lint install uninstall clean plugin-test init-config download
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/claude-gatekeeper
@@ -47,5 +47,8 @@ plugin-test: build
 	@echo "First install the default config (if not already present):"
 	@echo "  make init-config"
 
+download:
+	./bin/install.sh
+
 clean:
-	rm -rf bin/
+	rm -f bin/claude-gatekeeper bin/claude-gatekeeper.exe
