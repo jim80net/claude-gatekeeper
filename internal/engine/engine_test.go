@@ -314,7 +314,7 @@ func TestHeredocContentDoesNotTriggerDeny(t *testing.T) {
 	eng := newEngine(t, []config.Rule{
 		{Tool: "Bash", Input: `\brm\s+(-[a-zA-Z]*r|--recursive)`, Decision: "deny", Reason: "recursive delete"},
 		{Tool: "Bash", Input: `git\s+reset\s+--hard`, Decision: "deny", Reason: "hard reset"},
-		{Tool: "Bash", Input: `(?i)\b(DROP|TRUNCATE)\b`, Decision: "deny", Reason: "destructive SQL"},
+		{Tool: "Bash", Input: `(?si)(?=.*\b(?:psql|mysql|mariadb|sqlite3|mongosh|mongo|redis-cli|cqlsh|duckdb|cockroach|mycli|pgcli|litecli)\b).*\b(DROP|TRUNCATE|DELETE\s+FROM)\b`, Decision: "deny", Reason: "destructive SQL"},
 		{Tool: "Bash", Input: `(?:^|[|;&]\s*)git\s`, Decision: "allow", Reason: "git"},
 		{Tool: "Bash", Input: `(?:^|[|;&]\s*)gh\s`, Decision: "allow", Reason: "gh"},
 	})
@@ -355,9 +355,9 @@ func TestHeredocContentDoesNotTriggerDeny(t *testing.T) {
 			want: ptr(protocol.Deny),
 		},
 		{
-			name: "python heredoc with DROP TABLE denied",
+			name: "python heredoc with DROP TABLE no db tool - no deny",
 			cmd:  "python3 <<'EOF'\nDROP TABLE users\nEOF",
-			want: ptr(protocol.Deny),
+			want: nil, // no database CLI tool in command, SQL rule doesn't match
 		},
 	}
 
@@ -513,9 +513,12 @@ func TestDefaultRules(t *testing.T) {
 		{"allow rm files in build/", bashInput("rm build/output.bin"), ptr(protocol.Allow)},
 		{"deny sed", bashInput("sed -i 's/foo/bar/' file.txt"), ptr(protocol.Deny)},
 		{"deny awk", bashInput("awk '{print $1}' file.txt"), ptr(protocol.Deny)},
-		{"deny DROP TABLE", bashInput("psql -c 'DROP TABLE users'"), ptr(protocol.Deny)},
-		{"deny TRUNCATE", bashInput("mysql -e 'TRUNCATE TABLE logs'"), ptr(protocol.Deny)},
-		{"deny DELETE FROM", bashInput("sqlite3 db.sqlite 'DELETE FROM users'"), ptr(protocol.Deny)},
+		{"deny DROP TABLE via psql", bashInput("psql -c 'DROP TABLE users'"), ptr(protocol.Deny)},
+		{"deny TRUNCATE via mysql", bashInput("mysql -e 'TRUNCATE TABLE logs'"), ptr(protocol.Deny)},
+		{"deny DELETE FROM via sqlite3", bashInput("sqlite3 db.sqlite 'DELETE FROM users'"), ptr(protocol.Deny)},
+		{"deny DROP piped to psql", bashInput("echo 'DROP TABLE users' | psql"), ptr(protocol.Deny)},
+		{"allow drop in commit msg", bashInput("git commit -m 'fix: drop old feature'"), ptr(protocol.Allow)},
+		{"allow drop in echo", bashInput("echo 'drop this thing'"), ptr(protocol.Allow)},
 		{"deny cat .env", bashInput("cat .env"), ptr(protocol.Deny)},
 		{"deny read .env", readInput("/project/.env"), ptr(protocol.Deny)},
 		{"deny read id_rsa", readInput("/home/user/.ssh/id_rsa"), ptr(protocol.Deny)},
