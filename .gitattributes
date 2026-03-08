@@ -1,0 +1,2 @@
+# Track compiled binaries with Git LFS
+dist/** filter=lfs diff=lfs merge=lfs -text
