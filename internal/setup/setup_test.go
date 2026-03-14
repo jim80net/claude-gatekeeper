@@ -201,8 +201,9 @@ func TestUninstallNoSettings(t *testing.T) {
 	}
 }
 
-func TestInstallIdempotentWithPath(t *testing.T) {
-	// Test that idempotent check works with full paths and flags.
+func TestInstallReplacesOldHook(t *testing.T) {
+	// When a gatekeeper hook exists at a different path (e.g., standalone binary),
+	// Install should replace it with the new path (e.g., plugin binary).
 	existing := `{
 		"hooks": {
 			"PreToolUse": [
@@ -215,8 +216,39 @@ func TestInstallIdempotentWithPath(t *testing.T) {
 	}`
 	_, settingsPath := setupHome(t, existing)
 
-	// Should detect the existing hook even with a different path/flags.
 	setup.Install("/other/path/claude-gatekeeper")
+
+	m := readJSON(t, settingsPath)
+	hooks := m["hooks"].(map[string]interface{})
+	ptu := hooks["PreToolUse"].([]interface{})
+	if len(ptu) != 1 {
+		t.Errorf("expected 1 PreToolUse entry, got %d", len(ptu))
+	}
+
+	// Verify the command was updated to the new path.
+	entry := ptu[0].(map[string]interface{})
+	innerHooks := entry["hooks"].([]interface{})
+	hookDef := innerHooks[0].(map[string]interface{})
+	if hookDef["command"] != "/other/path/claude-gatekeeper" {
+		t.Errorf("command = %v, want /other/path/claude-gatekeeper", hookDef["command"])
+	}
+}
+
+func TestInstallIdempotentWithSamePath(t *testing.T) {
+	// When the exact same binary path is already registered, Install should be a no-op.
+	existing := `{
+		"hooks": {
+			"PreToolUse": [
+				{
+					"matcher": "",
+					"hooks": [{"type":"command","command":"/usr/local/bin/claude-gatekeeper","timeout":10}]
+				}
+			]
+		}
+	}`
+	_, settingsPath := setupHome(t, existing)
+
+	setup.Install("/usr/local/bin/claude-gatekeeper")
 
 	m := readJSON(t, settingsPath)
 	hooks := m["hooks"].(map[string]interface{})
