@@ -5,7 +5,7 @@ CONFIG_DST := $(HOME)/.claude/gatekeeper.toml
 VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS    := -s -w -X main.version=$(VERSION)
 
-.PHONY: build test lint install uninstall clean plugin-test init-config download
+.PHONY: build test lint fmt vet check install uninstall clean plugin-test init-config download
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o bin/$(BINARY) ./cmd/claude-gatekeeper
@@ -15,6 +15,14 @@ test:
 
 lint:
 	golangci-lint run ./...
+
+fmt:
+	@test -z "$$(gofmt -l .)" || (gofmt -l . && echo "Run 'gofmt -w .' to fix" && exit 1)
+
+vet:
+	go vet ./...
+
+check: fmt vet lint test
 
 init-config:
 	@mkdir -p $(HOME)/.claude

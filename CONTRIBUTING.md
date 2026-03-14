@@ -27,12 +27,27 @@ hooks/                   Claude Code plugin hook definition
 2. Add a test case to `TestDefaultRules` in `internal/engine/engine_test.go`
 3. Run `make test`
 
+## Pre-commit hooks
+
+Install [pre-commit](https://pre-commit.com/) then enable hooks:
+
+```bash
+pre-commit install
+```
+
+This runs format, vet, lint, build, and test checks before each commit.
+
 ## Testing
 
 ```bash
 make test      # Unit tests with race detector
 make lint      # Static analysis (requires golangci-lint)
+make fmt       # Check gofmt formatting
+make vet       # Run go vet
+make check     # Run all checks (fmt + vet + lint + test)
 ```
+
+CI runs the same checks on every PR via `.github/workflows/ci.yml`.
 
 ### Manual end-to-end test
 

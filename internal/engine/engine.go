@@ -260,8 +260,8 @@ func StripHeredocs(command string) string {
 func makeOutput(decision protocol.Decision, reason string) *protocol.HookOutput {
 	return &protocol.HookOutput{
 		HookSpecificOutput: &protocol.HookSpecificOutput{
-			HookEventName:           "PreToolUse",
-			PermissionDecision:      decision,
+			HookEventName:            "PreToolUse",
+			PermissionDecision:       decision,
 			PermissionDecisionReason: reason,
 		},
 	}
