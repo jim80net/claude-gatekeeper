@@ -28,13 +28,20 @@ func Install(binaryPath string) error {
 		settings = map[string]interface{}{}
 	}
 
-	if hasGatekeeperHook(settings) {
+	// If this exact binary is already registered, nothing to do.
+	if gatekeeperHookHasCommand(settings, binaryPath) {
 		fmt.Fprintf(os.Stderr, "Hook already configured in %s\n", settingsPath)
 		return nil
 	}
 
 	if err := backup(settingsPath); err != nil {
 		return err
+	}
+
+	// Remove any existing gatekeeper hooks from a different path
+	// (e.g., standalone binary being replaced by plugin version).
+	if hasGatekeeperHook(settings) {
+		removeGatekeeperHook(settings)
 	}
 
 	hookEntry := map[string]interface{}{
@@ -214,6 +221,24 @@ func removeGatekeeperHook(settings map[string]interface{}) {
 	} else {
 		delete(settings, "hooks")
 	}
+}
+
+// gatekeeperHookHasCommand checks if a gatekeeper hook with the exact command path exists.
+func gatekeeperHookHasCommand(settings map[string]interface{}, command string) bool {
+	hooks := peekMap(settings, "hooks")
+	preToolUse := peekSlice(hooks, "PreToolUse")
+	for _, entry := range preToolUse {
+		if m, ok := entry.(map[string]interface{}); ok {
+			for _, h := range peekSlice(m, "hooks") {
+				if hm, ok := h.(map[string]interface{}); ok {
+					if cmd, _ := hm["command"].(string); cmd == command {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 func isGatekeeperCommand(cmd string) bool {
