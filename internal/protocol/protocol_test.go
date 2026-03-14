@@ -71,8 +71,8 @@ func TestReadInput(t *testing.T) {
 func TestWriteOutput(t *testing.T) {
 	out := &protocol.HookOutput{
 		HookSpecificOutput: &protocol.HookSpecificOutput{
-			HookEventName:           "PreToolUse",
-			PermissionDecision:      protocol.Deny,
+			HookEventName:            "PreToolUse",
+			PermissionDecision:       protocol.Deny,
 			PermissionDecisionReason: "test reason",
 		},
 	}

@@ -37,9 +37,9 @@ type HookOutput struct {
 
 // HookSpecificOutput carries the PreToolUse permission decision.
 type HookSpecificOutput struct {
-	HookEventName          string   `json:"hookEventName"`
-	PermissionDecision     Decision `json:"permissionDecision"`
-	PermissionDecisionReason string  `json:"permissionDecisionReason,omitempty"`
+	HookEventName            string   `json:"hookEventName"`
+	PermissionDecision       Decision `json:"permissionDecision"`
+	PermissionDecisionReason string   `json:"permissionDecisionReason,omitempty"`
 }
 
 // ReadInput parses hook input from r.
@@ -60,37 +60,51 @@ func WriteOutput(w io.Writer, output *HookOutput) error {
 func ExtractInputString(toolName string, raw json.RawMessage) string {
 	switch toolName {
 	case "Bash":
-		var v struct{ Command string `json:"command"` }
+		var v struct {
+			Command string `json:"command"`
+		}
 		if json.Unmarshal(raw, &v) == nil {
 			return v.Command
 		}
 	case "Read", "Write", "Edit":
-		var v struct{ FilePath string `json:"file_path"` }
+		var v struct {
+			FilePath string `json:"file_path"`
+		}
 		if json.Unmarshal(raw, &v) == nil {
 			return v.FilePath
 		}
 	case "Glob":
-		var v struct{ Pattern string `json:"pattern"` }
+		var v struct {
+			Pattern string `json:"pattern"`
+		}
 		if json.Unmarshal(raw, &v) == nil {
 			return v.Pattern
 		}
 	case "Grep":
-		var v struct{ Pattern string `json:"pattern"` }
+		var v struct {
+			Pattern string `json:"pattern"`
+		}
 		if json.Unmarshal(raw, &v) == nil {
 			return v.Pattern
 		}
 	case "WebFetch":
-		var v struct{ URL string `json:"url"` }
+		var v struct {
+			URL string `json:"url"`
+		}
 		if json.Unmarshal(raw, &v) == nil {
 			return v.URL
 		}
 	case "WebSearch":
-		var v struct{ Query string `json:"query"` }
+		var v struct {
+			Query string `json:"query"`
+		}
 		if json.Unmarshal(raw, &v) == nil {
 			return v.Query
 		}
 	case "Agent":
-		var v struct{ SubagentType string `json:"subagent_type"` }
+		var v struct {
+			SubagentType string `json:"subagent_type"`
+		}
 		if json.Unmarshal(raw, &v) == nil {
 			return v.SubagentType
 		}
