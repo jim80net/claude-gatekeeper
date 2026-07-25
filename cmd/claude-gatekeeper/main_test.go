@@ -312,3 +312,31 @@ func TestRunPolicyTestExitCodes(t *testing.T) {
 		})
 	}
 }
+
+func TestRunReleaseVerifyUsage(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		args []string
+		want int
+	}{
+		{"missing tag", []string{"verify-release"}, 2},
+		{"help", []string{"verify-release", "--help"}, 0},
+		{
+			"invalid minimum",
+			[]string{
+				"verify-release",
+				"v1.2.3",
+				"--host-binary", "/tmp/host",
+				"--plugin-binary", "/tmp/plugin",
+				"--min-surfaces", "-1",
+			},
+			2,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := run(strings.NewReader(""), io.Discard, test.args); got != test.want {
+				t.Fatalf("run() = %d, want %d", got, test.want)
+			}
+		})
+	}
+}
