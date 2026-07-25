@@ -20,20 +20,25 @@
 //	uninstall Remove the Claude hook registration.
 //	doctor    Inventory live gatekeeper hook surfaces and report drift.
 //	test      Run declarative policy cases against live or explicit config.
+//	verify-release Verify a published release and live binary stamps.
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/jim80net/claude-gatekeeper/internal/adapter"
 	"github.com/jim80net/claude-gatekeeper/internal/inventory"
 	"github.com/jim80net/claude-gatekeeper/internal/migrate"
 	"github.com/jim80net/claude-gatekeeper/internal/policytest"
 	"github.com/jim80net/claude-gatekeeper/internal/posture"
+	"github.com/jim80net/claude-gatekeeper/internal/releaseverify"
 	"github.com/jim80net/claude-gatekeeper/internal/setup"
 	"github.com/jim80net/gatekeeper-core/canonical"
 	"github.com/jim80net/gatekeeper-core/config"
@@ -60,6 +65,8 @@ func run(stdin io.Reader, stdout io.Writer, args []string) int {
 			return runDoctor(stdout, args[1:])
 		case "test":
 			return runPolicyTest(stdout, args[1:])
+		case "verify-release":
+			return runReleaseVerify(stdout, args[1:])
 		case "version":
 			fmt.Fprintf(os.Stderr, "claude-gatekeeper %s\n", version)
 			return 0
@@ -99,6 +106,64 @@ func run(stdin io.Reader, stdout io.Writer, args []string) int {
 	installDefaultConfig()
 
 	return runHook(stdin, stdout, ad, *debug)
+}
+
+func runReleaseVerify(stdout io.Writer, args []string) int {
+	fs := flag.NewFlagSet("verify-release", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	repo := fs.String("repo", "jim80net/gatekeeper-claude", "GitHub owner/repository")
+	hostBinary := fs.String("host-binary", "", "Explicit live host binary path")
+	pluginBinary := fs.String("plugin-binary", "", "Explicit active plugin binary path")
+	minSurfaces := fs.Int("min-surfaces", 3, "Minimum live hook surfaces Doctor must find")
+	jsonOutput := fs.Bool("json", false, "Emit machine-readable JSON")
+	tag := ""
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		tag = args[0]
+		args = args[1:]
+	}
+	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
+		return 2
+	}
+	if tag == "" {
+		if fs.NArg() == 1 {
+			tag = fs.Arg(0)
+		} else {
+			fmt.Fprintln(os.Stderr, "usage: claude-gatekeeper verify-release [options] vX.Y.Z")
+			return 2
+		}
+	} else if fs.NArg() != 0 {
+		fmt.Fprintln(os.Stderr, "usage: claude-gatekeeper verify-release [options] vX.Y.Z")
+		return 2
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	result, err := releaseverify.Verify(ctx, releaseverify.Options{
+		Tag:          tag,
+		Repo:         *repo,
+		HostBinary:   *hostBinary,
+		PluginBinary: *pluginBinary,
+		MinSurfaces:  *minSurfaces,
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verify-release: %v\n", err)
+		return 2
+	}
+	if *jsonOutput {
+		err = releaseverify.WriteJSON(stdout, result)
+	} else {
+		err = releaseverify.WriteTable(stdout, result)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "verify-release: %v\n", err)
+		return 2
+	}
+	if !result.OK {
+		return result.ExitCode
+	}
+	return 0
 }
 
 func runPolicyTest(stdout io.Writer, args []string) int {

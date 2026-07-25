@@ -81,6 +81,23 @@ Releases are automated via GitHub Actions:
 4. goreleaser builds platform archives and attaches them to the release
 5. build.yml rebuilds `dist/` binaries in the repo for marketplace installs
 
+After GoReleaser finishes, verify the published release and live stamps in one
+read-only command:
+
+```bash
+claude-gatekeeper verify-release v1.5.2 \
+  --host-binary "$HOME/go/bin/claude-gatekeeper" \
+  --plugin-binary /explicit/active/plugin/bin/claude-gatekeeper
+```
+
+The command requires the exact tag, all six platform archives, and
+`checksums.txt`; checksum-verifies and unpacks the current-platform artifact;
+compares downloaded, host, and active-plugin version stamps; runs
+`doctor --json`; and exercises deterministic Claude, Codex, and Grok deny wires.
+It never installs, replaces, restarts, tags, publishes, or mutates a live
+surface. Use `--json` for automation and `--min-surfaces` to pin the expected
+Doctor inventory floor.
+
 To test goreleaser locally:
 
 ```bash
