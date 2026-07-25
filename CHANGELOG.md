@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/jim80net/gatekeeper-claude/compare/v1.5.1...v1.6.0) (2026-07-25)
+
+
+### Features
+
+* add one-command release verification ([#63](https://github.com/jim80net/gatekeeper-claude/issues/63)) ([1082ed2](https://github.com/jim80net/gatekeeper-claude/commit/1082ed23490f1fcd843a3a7011a1349205e078c6))
+
 ## [1.5.1](https://github.com/jim80net/gatekeeper-claude/compare/v1.5.0...v1.5.1) (2026-07-19)
 
 
