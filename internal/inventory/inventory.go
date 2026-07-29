@@ -27,6 +27,7 @@ type Options struct {
 	ExpectedVersion string
 	MinSurfaces     int
 	VersionProbe    func(string) (string, error)
+	LookPath        func(string) (string, error)
 }
 
 // Report is the machine-readable result of a hook inventory.
@@ -78,6 +79,9 @@ func Collect(opts Options) (Report, error) {
 	}
 	if opts.VersionProbe == nil {
 		opts.VersionProbe = probeVersion
+	}
+	if opts.LookPath == nil {
+		opts.LookPath = exec.LookPath
 	}
 	report := Report{
 		OK: true, ExpectedBinary: cleanPath(opts.ExpectedBinary), ExpectedVersion: opts.ExpectedVersion,
@@ -301,6 +305,10 @@ func inspect(c candidate, command string, parsed parsedCommand, opts Options) Su
 	binary := expandHome(parsed.Binary, opts.Home)
 	if c.pluginRoot != "" {
 		binary = filepath.Join(c.pluginRoot, "bin", binaryName)
+	} else if isBareCommand(binary) {
+		if resolved, err := opts.LookPath(binary); err == nil {
+			binary = resolved
+		}
 	}
 	harness := "claude"
 	if value := parsed.Env["GATEKEEPER_HARNESS"]; value != "" {
@@ -554,6 +562,10 @@ func expandHome(path, home string) string {
 		return filepath.Join(home, strings.TrimPrefix(path, "~/"))
 	}
 	return path
+}
+
+func isBareCommand(path string) bool {
+	return path != "" && filepath.Base(path) == path
 }
 
 func cleanPath(path string) string {
