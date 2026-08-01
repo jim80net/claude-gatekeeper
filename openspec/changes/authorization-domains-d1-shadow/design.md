@@ -136,3 +136,8 @@ I1b credential binding, durable audit storage, replay claims, final-PEP
 materialization, lifecycle provisioning, PA activation, and production
 enforcement remain separate gated work. New actions beyond `read` also require
 design review.
+
+Review notes for a later bounded change: align the core and lifecycle artifact's
+isolation-claim tokens; deepen compile/CAS/idempotency differential fixtures;
+and keep public artifacts free of host-private provenance. None is implemented
+or treated as authority in I1a.

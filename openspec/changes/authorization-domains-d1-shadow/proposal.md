@@ -50,10 +50,11 @@ The logical PA object identifier is synthetic and has no filesystem binding.
 
 - Authorization Domains r2 design paper and the 2026-08-01 design-GO record.
 - gatekeeper-core D1 contract, action registry, fixtures, conformance tests, and
-  coverage manifest at exact PR #5 pin
-  `124b0daba1af03f1b913a6610b75262499ea1af2`.
+  coverage manifest at exact PR #5 gated head
+  `124b0daba1af03f1b913a6610b75262499ea1af2`, landed on main as
+  `2575fdba43a5e29ec2d0b538942bab07c0cee325`.
 - gatekeeper-codex independent replay checker at
-  `8e376c79d64bc720b280ab839058cc71ca774990`: no production
+  `1cc451f1ff89aaf8a495b7495a5634ad2609690e`: no production
   evaluator/canonicalizer imports, claimed/resolved context separation, and
   unknown or untraced critical seams as coverage failures.
 - gatekeeper-grok lifecycle/isolation chapter
