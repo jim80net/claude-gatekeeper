@@ -14,6 +14,15 @@ func WriteTable(w io.Writer, report Report) error {
 	if _, err := fmt.Fprintf(tw, "%s\t%t\t%t\t%s\t%s\n", report.Mode, report.Enforcement, report.Conformant, report.Decision.Decision, report.Decision.ReasonCode); err != nil {
 		return err
 	}
+	if _, err := fmt.Fprintln(tw, "\nNEUTRAL MAPPING\tOUTCOME\tREASON\tPINNED V1"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%t\n", report.NeutralMapping.D1Decision, report.NeutralMapping.Outcome, report.NeutralMapping.Reason, report.NeutralMapping.Representable); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(tw, "omitted\t\t\t%v\n", report.NeutralMapping.Omitted); err != nil {
+		return err
+	}
 	if _, err := fmt.Fprintln(tw, "\nCOVERAGE\tSTATE\tGAP"); err != nil {
 		return err
 	}

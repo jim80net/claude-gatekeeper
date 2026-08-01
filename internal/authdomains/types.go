@@ -8,6 +8,9 @@ const (
 	SchemaV1   = "authorization-domains/v1"
 	RegistryV1 = "1"
 	PAObjectID = "credential://pa/google-service-account-keyfile/v1"
+	// NeutralFixtureObjectID is the independent checker's inert object. It is
+	// deliberately distinct from the opaque PA logical object.
+	NeutralFixtureObjectID = "fixture://authorization-domains/protected/exact-read-object"
 )
 
 type DecisionKind string
@@ -153,9 +156,21 @@ type Report struct {
 	Enforcement     bool           `json:"enforcement"`
 	Conformant      bool           `json:"conformant"`
 	Decision        Decision       `json:"simulated_decision"`
+	NeutralMapping  NeutralMapping `json:"neutral_mapping"`
 	ClaimedDomain   string         `json:"claimed_domain,omitempty"`
 	ResolvedContext *DomainContext `json:"resolved_context,omitempty"`
 	Coverage        []CoverageSeam `json:"coverage"`
 	Warnings        []string       `json:"warnings"`
 	Errors          []string       `json:"errors"`
+}
+
+// NeutralMapping discloses the lossy projection from the full D1 decision to
+// the pinned independent replay vocabulary.
+type NeutralMapping struct {
+	D1Decision    DecisionKind `json:"d1_decision"`
+	Outcome       string       `json:"outcome"`
+	Reason        string       `json:"reason"`
+	Representable bool         `json:"representable_in_pinned_v1"`
+	Omitted       []string     `json:"omitted_fields"`
+	Note          string       `json:"note,omitempty"`
 }

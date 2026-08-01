@@ -81,11 +81,34 @@ func TestEvaluateProtectedReadAndExactException(t *testing.T) {
 	if report.Decision.Decision != PermitException || report.Decision.ExceptionID != "exception-pa" {
 		t.Fatalf("decision = %#v", report.Decision)
 	}
+	if report.NeutralMapping.D1Decision != PermitException || report.NeutralMapping.Outcome != "allow" || report.NeutralMapping.Representable {
+		t.Fatalf("neutral mapping = %#v", report.NeutralMapping)
+	}
+	if !contains(report.NeutralMapping.Omitted, "exception_id") {
+		t.Fatalf("neutral omissions = %v", report.NeutralMapping.Omitted)
+	}
 
 	request.DomainContext.DomainID = "domain-other"
 	report = Shadow(policy, request, coverage, now)
 	if report.Decision.Decision != DenyBlocked {
 		t.Fatalf("mismatched resolved domain decision = %q", report.Decision.Decision)
+	}
+}
+
+func TestNeutralObjectIdentitiesCannotBeConfused(t *testing.T) {
+	if PAObjectID == NeutralFixtureObjectID || !strings.HasPrefix(PAObjectID, "credential://") || !strings.HasPrefix(NeutralFixtureObjectID, "fixture://") {
+		t.Fatalf("logical=%q fixture=%q", PAObjectID, NeutralFixtureObjectID)
+	}
+}
+
+func TestNeutralMappingDisclosesFullContractOmissions(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	policy, request, coverage := fixture(now)
+	mapping := Shadow(policy, request, coverage, now).NeutralMapping
+	for _, field := range []string{"request_id", "policy_generation", "classifier_version", "requested_at", "decided_at", "full_canonicalization_evidence"} {
+		if !contains(mapping.Omitted, field) {
+			t.Errorf("missing omission %q: %v", field, mapping.Omitted)
+		}
 	}
 }
 
@@ -137,6 +160,16 @@ func TestCoverageFailsUnknownMissingAndUntracedCriticalSeams(t *testing.T) {
 	coverage.Seams = append(coverage.Seams, CoverageSeam{ID: "side-door", Critical: true, State: "contract_only"})
 	report := Shadow(policy, request, coverage, now)
 	if report.Conformant || len(report.Errors) == 0 {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
+func TestCoverageRequiresTracedOrdinaryWorkEvenThoughNonCritical(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	policy, request, coverage := fixture(now)
+	coverage.NeutralReplay.Coverage = coverage.NeutralReplay.Coverage[1:]
+	report := Shadow(policy, request, coverage, now)
+	if report.Conformant || !strings.Contains(strings.Join(report.Errors, " "), `neutral seam "ordinary-work" is missing`) {
 		t.Fatalf("report = %#v", report)
 	}
 }

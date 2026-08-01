@@ -99,6 +99,32 @@ canonicalizer dependency graph. This implementation emits replay-compatible
 evidence but does not import or copy the independent checker into the runtime
 package.
 
+### 7.1 Neutral replay mapping is intentionally lossy
+
+| D1 decision | Neutral outcome | Neutral reason | Pinned-v1 status |
+| --- | --- | --- | --- |
+| `permit_unblocked` | `allow` | `unprotected` | representable |
+| `deny_blocked` | `deny` | `protected_block` | representable |
+| `permit_exception` | `allow` | `exact_exception` | **not representable** until neutral reason and exception binding are extended |
+
+The shadow report always represents this mapping and marks the last row as
+lossy rather than collapsing it into ordinary allow. The pinned neutral shape
+omits full D1 `request_id`, policy generation, classifier version,
+request/decision times, and full canonicalization evidence. Exception permits
+also lose exception ID, evaluated constraints, and lease expiry. These are
+disclosed gaps, not authorization shortcuts.
+
+The opaque logical PA object
+`credential://pa/google-service-account-keyfile/v1` belongs to the D1 policy
+contract. The independent checker uses the inert
+`fixture://authorization-domains/protected/exact-read-object`. Neither is a
+physical path, and the fixture URI is never an alias for the logical object.
+
+The integration is stricter than “critical seams only”: neutral
+`ordinary-work` is non-critical but is still required and traced, because the
+open-by-default invariant needs positive evidence that ordinary work did not
+silently become closed.
+
 `runHook` does not import or call Authorization Domains. The shadow command is
 reachable only through its explicit subcommand, reads explicit fixture paths,
 and writes only its report stream. Cross-harness tests compare existing Claude,

@@ -106,6 +106,10 @@ func Shadow(policy PolicyGeneration, request Request, coverage CoverageManifest,
 	}
 	report.Errors = append(report.Errors, validateCoverage(coverage)...)
 	report.Decision = evaluate(policy, request, now)
+	report.NeutralMapping = mapNeutral(report.Decision)
+	if !report.NeutralMapping.Representable {
+		report.Warnings = append(report.Warnings, report.NeutralMapping.Note)
+	}
 	for _, seam := range coverage.Seams {
 		if seam.State != "implemented_and_probed" {
 			report.Warnings = append(report.Warnings, fmt.Sprintf("%s: %s", seam.ID, seam.KnownGap))
@@ -115,6 +119,29 @@ func Shadow(policy PolicyGeneration, request Request, coverage CoverageManifest,
 	sort.Strings(report.Warnings)
 	report.Conformant = len(report.Errors) == 0
 	return report
+}
+
+func mapNeutral(decision Decision) NeutralMapping {
+	mapping := NeutralMapping{
+		D1Decision:    decision.Decision,
+		Representable: true,
+		Omitted:       []string{"request_id", "policy_generation", "classifier_version", "requested_at", "decided_at", "full_canonicalization_evidence"},
+	}
+	switch decision.Decision {
+	case PermitUnblocked:
+		mapping.Outcome, mapping.Reason = "allow", "unprotected"
+	case DenyBlocked:
+		mapping.Outcome, mapping.Reason = "deny", "protected_block"
+	case PermitException:
+		mapping.Outcome, mapping.Reason = "allow", "exact_exception"
+		mapping.Representable = false
+		mapping.Omitted = append(mapping.Omitted, "exception_id", "evaluated_constraints", "lease_not_after")
+		mapping.Note = "permit_exception requires an explicit neutral replay reason and exception binding; pinned replay v1 cannot represent it without loss"
+	default:
+		mapping.Representable = false
+		mapping.Note = "unknown D1 decision has no neutral replay mapping"
+	}
+	return mapping
 }
 
 func evaluate(policy PolicyGeneration, request Request, now time.Time) Decision {

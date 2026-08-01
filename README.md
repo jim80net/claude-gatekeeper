@@ -329,6 +329,15 @@ non-conformant, and `2` means invocation, decoding, or I/O failed. See
 [`examples/auth-domains/`](examples/auth-domains/) and the bounded
 [`OpenSpec change`](openspec/changes/authorization-domains-d1-shadow/).
 
+The JSON report also exposes the deliberately lossy neutral-replay mapping.
+`permit_exception` is not collapsed into ordinary allow: it is shown as
+`allow` / `exact_exception` with `representable_in_pinned_v1: false`. The report
+lists neutral-v1 omissions (request, generation, classifier, time,
+canonicalization, and exception/constraint/lease evidence). The D1
+`credential://` logical object and the independent checker's inert `fixture://`
+object are distinct non-path identities. Neutral coverage requires a traced
+ordinary-work record even though that seam is non-critical.
+
 ## Debugging
 
 Run with `--debug` to see rule evaluation on stderr:

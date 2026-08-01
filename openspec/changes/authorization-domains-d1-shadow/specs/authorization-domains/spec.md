@@ -122,3 +122,37 @@ and SHALL reject missing or unknown critical trace actions.
 
 - **WHEN** a critical coverage seam has no recognized replay action
 - **THEN** independent conformance fails
+
+### Requirement: Neutral replay losses are explicit
+
+The shadow report SHALL map all three D1 decisions. It SHALL mark
+`permit_exception` as unavailable in pinned neutral v1 rather than collapsing
+it into `permit_unblocked`, and SHALL list omitted request, generation,
+classifier, time, canonicalization, exception, constraint, and lease evidence.
+
+#### Scenario: Exact exception permit
+
+- **WHEN** D1 simulates `permit_exception`
+- **THEN** the neutral mapping reports `allow` / `exact_exception` and
+  `representable_in_pinned_v1: false`
+
+### Requirement: Logical and fixture objects remain distinct
+
+The D1 logical PA object and the independent checker's inert fixture URI SHALL
+use distinct schemes and SHALL NOT alias each other or a physical path.
+
+#### Scenario: Independent replay fixture
+
+- **WHEN** replay evidence uses the inert `fixture://` object
+- **THEN** it cannot select the D1 `credential://` logical object
+
+### Requirement: Ordinary replay is required even when non-critical
+
+Neutral coverage SHALL require a traced `ordinary-work` seam even though it is
+classified non-critical, so the open-by-default invariant has positive replay
+evidence.
+
+#### Scenario: Missing ordinary trace
+
+- **WHEN** protected critical seams are traced but `ordinary-work` is absent
+- **THEN** shadow coverage is non-conformant
