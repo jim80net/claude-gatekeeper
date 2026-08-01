@@ -338,6 +338,14 @@ canonicalization, and exception/constraint/lease evidence). The D1
 object are distinct non-path identities. Neutral coverage requires a traced
 ordinary-work record even though that seam is non-critical.
 
+The neutral/lifecycle alignment is pinned to landed Core main
+`cb557239a90a82c34686d6ca55046a7b2c9f3129`, checker
+`8e376c79d64bc720b280ab839058cc71ca774990`, and all 38 probe IDs in lifecycle
+digest `4a5d12ff…`. Unknown, missing, duplicate, or untraced probes fail.
+Unknown/drift evidence must suppress the claim, fail or quarantine its receipt,
+provide a reason, mark claims invalid, and list incomplete IDs. The shadow does
+not reimplement that oracle or convert its evidence into enforcement.
+
 ## Debugging
 
 Run with `--debug` to see rule evaluation on stderr:

@@ -229,7 +229,7 @@ func validateCoverage(manifest CoverageManifest) []string {
 		}
 	}
 	neutral := manifest.NeutralReplay
-	if neutral.Schema != "gatekeeper.auth-domains.replay/v1" || neutral.SchemaFile == "" || neutral.LifecycleContractSHA256 != "4a5d12ff96b136db5bd7e78c9467a222c242be99c060d5a17fe267725bc9caff" || neutral.LifecycleProbeRegistry == "" || neutral.IndependentCheckerHead != "1cc451f1ff89aaf8a495b7495a5634ad2609690e" {
+	if neutral.Schema != "gatekeeper.auth-domains.replay/v1" || neutral.SchemaFile != "neutral-replay.schema.json" || neutral.LifecycleContractSHA256 != "4a5d12ff96b136db5bd7e78c9467a222c242be99c060d5a17fe267725bc9caff" || neutral.LifecycleProbeRegistry != "lifecycle-probes.json" || neutral.IndependentCheckerHead != "8e376c79d64bc720b280ab839058cc71ca774990" {
 		errs = append(errs, "coverage: neutral replay pins are incomplete or invalid")
 	}
 	wantNeutral := map[string]bool{"ordinary-work": false, "protected-read-pep": true, "protected-read-audit": true}

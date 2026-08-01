@@ -125,6 +125,16 @@ The integration is stricter than “critical seams only”: neutral
 open-by-default invariant needs positive evidence that ordinary work did not
 silently become closed.
 
+Lifecycle conformance is delegated to the independent checker pinned at
+`8e376c79d64bc720b280ab839058cc71ca774990`, not reimplemented by the shadow.
+Its registry is all 38 IDs in lifecycle contract digest
+`4a5d12ff96b136db5bd7e78c9467a222c242be99c060d5a17fe267725bc9caff`.
+Unknown, missing, duplicate, or untraced probes fail. Unknown or drift evidence
+can conform only when it provides a reason, suppresses `claim_after` to `none`,
+fails or quarantines the receipt, reports `claims_valid: false`, and lists the
+affected IDs as incomplete. The shadow validates the exact checker, schema,
+digest, and registry pins and never turns that evidence into enforcement.
+
 `runHook` does not import or call Authorization Domains. The shadow command is
 reachable only through its explicit subcommand, reads explicit fixture paths,
 and writes only its report stream. Cross-harness tests compare existing Claude,

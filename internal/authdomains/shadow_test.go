@@ -41,7 +41,7 @@ func fixture(now time.Time) (PolicyGeneration, Request, CoverageManifest) {
 }
 
 func neutralReplayFixture() NeutralReplay {
-	return NeutralReplay{Schema: "gatekeeper.auth-domains.replay/v1", SchemaFile: "neutral-replay.schema.json", LifecycleContractSHA256: "4a5d12ff96b136db5bd7e78c9467a222c242be99c060d5a17fe267725bc9caff", LifecycleProbeRegistry: "lifecycle-probes.json", IndependentCheckerHead: "1cc451f1ff89aaf8a495b7495a5634ad2609690e", Coverage: []NeutralCoverageSeam{
+	return NeutralReplay{Schema: "gatekeeper.auth-domains.replay/v1", SchemaFile: "neutral-replay.schema.json", LifecycleContractSHA256: "4a5d12ff96b136db5bd7e78c9467a222c242be99c060d5a17fe267725bc9caff", LifecycleProbeRegistry: "lifecycle-probes.json", IndependentCheckerHead: "8e376c79d64bc720b280ab839058cc71ca774990", Coverage: []NeutralCoverageSeam{
 		{Name: "ordinary-work", Critical: false, RequiredTraced: true, MapsTo: []string{"policy-evaluator"}},
 		{Name: "protected-read-pep", Critical: true, RequiredTraced: true, MapsTo: []string{"policy-evaluator", "decision-replay-claim", "pa-credential-final-pep"}},
 		{Name: "protected-read-audit", Critical: true, RequiredTraced: true, MapsTo: []string{"durable-audit-admission"}},
@@ -170,6 +170,16 @@ func TestCoverageRequiresTracedOrdinaryWorkEvenThoughNonCritical(t *testing.T) {
 	coverage.NeutralReplay.Coverage = coverage.NeutralReplay.Coverage[1:]
 	report := Shadow(policy, request, coverage, now)
 	if report.Conformant || !strings.Contains(strings.Join(report.Errors, " "), `neutral seam "ordinary-work" is missing`) {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
+func TestCoverageRejectsSupersededIndependentCheckerPin(t *testing.T) {
+	now := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	policy, request, coverage := fixture(now)
+	coverage.NeutralReplay.IndependentCheckerHead = "1cc451f1ff89aaf8a495b7495a5634ad2609690e"
+	report := Shadow(policy, request, coverage, now)
+	if report.Conformant || !strings.Contains(strings.Join(report.Errors, " "), "neutral replay pins") {
 		t.Fatalf("report = %#v", report)
 	}
 }

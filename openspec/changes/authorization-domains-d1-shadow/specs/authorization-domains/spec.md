@@ -156,3 +156,23 @@ evidence.
 
 - **WHEN** protected critical seams are traced but `ordinary-work` is absent
 - **THEN** shadow coverage is non-conformant
+
+### Requirement: Lifecycle replay uses the landed alignment contract
+
+I1a SHALL pin checker `8e376c79d64bc720b280ab839058cc71ca774990`
+and lifecycle digest
+`4a5d12ff96b136db5bd7e78c9467a222c242be99c060d5a17fe267725bc9caff`.
+All 38 registered probe IDs are required. Unknown, missing, duplicate, or
+untraced probes SHALL fail conformance.
+
+#### Scenario: Superseded checker pin
+
+- **WHEN** coverage names checker `1cc451f…`
+- **THEN** shadow coverage is non-conformant
+
+#### Scenario: Unknown or drift observation
+
+- **WHEN** a required probe returns `unknown` or `drift`
+- **THEN** conformance requires a reason, `claim_after: none`, a failed or
+  quarantined receipt, `claims_valid: false`, and the probe ID in
+  `incomplete_probes`
