@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/jim80net/claude-gatekeeper/internal/authdomains"
 	"github.com/jim80net/claude-gatekeeper/internal/protocol"
 )
 
@@ -29,6 +31,101 @@ func setupTestHome(t *testing.T) {
 	origHome := os.Getenv("HOME")
 	t.Cleanup(func() { os.Setenv("HOME", origHome) })
 	os.Setenv("HOME", homeDir)
+}
+
+func TestRunAuthDomainsShadowIsExplicitlyNonEnforcing(t *testing.T) {
+	now := time.Now().UTC()
+	policy, request, coverage := authdomainsFixture(now)
+	dir := t.TempDir()
+	write := func(name string, value any) string {
+		t.Helper()
+		path := filepath.Join(dir, name)
+		data, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	var stdout bytes.Buffer
+	code := run(strings.NewReader(""), &stdout, []string{"auth-domains", "shadow", "--json", "--policy", write("policy.json", policy), "--request", write("request.json", request), "--coverage", write("coverage.json", coverage)})
+	if code != 0 {
+		t.Fatalf("code=%d output=%s", code, stdout.String())
+	}
+	var report authdomains.Report
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.Mode != "shadow" || report.Enforcement || report.Decision.Decision != authdomains.DenyBlocked {
+		t.Fatalf("report=%#v", report)
+	}
+}
+
+func TestRunAuthDomainsShadowExitCodes(t *testing.T) {
+	var stdout bytes.Buffer
+	if got := run(strings.NewReader(""), &stdout, []string{"auth-domains", "shadow"}); got != 2 {
+		t.Fatalf("usage code=%d", got)
+	}
+	now := time.Now().UTC()
+	policy, request, coverage := authdomainsFixture(now)
+	coverage.Seams = coverage.Seams[1:]
+	dir := t.TempDir()
+	paths := make([]string, 3)
+	for i, value := range []any{policy, request, coverage} {
+		paths[i] = filepath.Join(dir, string(rune('a'+i))+".json")
+		data, _ := json.Marshal(value)
+		if err := os.WriteFile(paths[i], data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stdout.Reset()
+	if got := run(strings.NewReader(""), &stdout, []string{"auth-domains", "shadow", "--json", "--policy", paths[0], "--request", paths[1], "--coverage", paths[2]}); got != 1 {
+		t.Fatalf("nonconformant code=%d output=%s", got, stdout.String())
+	}
+}
+
+func TestAuthDomainsShadowDoesNotChangeHarnessAbstainWires(t *testing.T) {
+	setupTestHome(t)
+	grokFixture, err := os.ReadFile("../../internal/adapter/grok/testdata/pre_tool_use_run_terminal_command.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name     string
+		args     []string
+		input    string
+		wantCode int
+		wantWire string
+	}{
+		{name: "claude", args: []string{"--harness", "claude"}, input: hookJSON("Bash", "git status"), wantCode: 0, wantWire: `"permissionDecision":"allow"`},
+		{name: "codex", args: []string{"--harness", "codex"}, input: hookJSON("Bash", "git status"), wantCode: 0, wantWire: ""},
+		{name: "grok", args: []string{"--harness", "grok"}, input: string(grokFixture), wantCode: 0, wantWire: `"decision":"allow"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			if got := run(strings.NewReader(tt.input), &stdout, tt.args); got != tt.wantCode {
+				t.Fatalf("code=%d want=%d output=%q", got, tt.wantCode, stdout.String())
+			}
+			if !strings.Contains(stdout.String(), tt.wantWire) || (tt.wantWire == "" && stdout.Len() != 0) {
+				t.Fatalf("wire=%q want marker=%q", stdout.String(), tt.wantWire)
+			}
+		})
+	}
+}
+
+func authdomainsFixture(now time.Time) (authdomains.PolicyGeneration, authdomains.Request, authdomains.CoverageManifest) {
+	ctx := authdomains.DomainContext{SchemaVersion: authdomains.SchemaV1, ContextID: "ctx", DomainID: "domain", PrincipalID: "principal", WorkerID: "worker", SessionID: "session", RuntimeIdentity: authdomains.RuntimeIdentity{Kind: "linux_user", Subject: "uid:1001"}, IsolationClaim: "unproved", IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour), MintAuthority: "authorization-server"}
+	policy := authdomains.PolicyGeneration{SchemaVersion: authdomains.SchemaV1, Generation: 1, RegistryVersion: authdomains.RegistryV1, CreatedAt: now, Blocks: []authdomains.ProtectedBlock{{ID: "block", ObjectSelector: authdomains.ObjectSelector{Kind: "exact", ObjectID: authdomains.PAObjectID}, Actions: []string{"read"}, Reason: "fixture", Owner: "test", AuditPolicy: "durable_before_effect", CreatedAt: now}}}
+	request := authdomains.Request{SchemaVersion: authdomains.SchemaV1, RequestID: "req", DomainContext: &ctx, Action: "read", Object: authdomains.RequestObject{ObjectID: authdomains.PAObjectID, CanonicalizationVersion: "1"}, PolicyGeneration: 1, ClassifierVersion: "shadow-v1", RequestedAt: now}
+	seams := []authdomains.CoverageSeam{}
+	for _, id := range []string{"policy-store-publish", "policy-evaluator", "durable-audit-admission", "decision-replay-claim", "pa-credential-final-pep", "worker-lifecycle-archive"} {
+		seams = append(seams, authdomains.CoverageSeam{ID: id, Kind: "contract", Critical: true, Owner: "test", State: "contract_only", TraceAction: id + "-trace", NegativeFixture: id + "-negative", KnownGap: "not implemented"})
+	}
+	neutral := authdomains.NeutralReplay{Schema: "gatekeeper.auth-domains.replay/v1", SchemaFile: "neutral-replay.schema.json", LifecycleContractSHA256: "4a5d12ff96b136db5bd7e78c9467a222c242be99c060d5a17fe267725bc9caff", LifecycleProbeRegistry: "lifecycle-probes.json", IndependentCheckerHead: "8e376c79d64bc720b280ab839058cc71ca774990", Coverage: []authdomains.NeutralCoverageSeam{{Name: "ordinary-work", RequiredTraced: true, MapsTo: []string{"policy-evaluator"}}, {Name: "protected-read-pep", Critical: true, RequiredTraced: true, MapsTo: []string{"policy-evaluator", "decision-replay-claim", "pa-credential-final-pep"}}, {Name: "protected-read-audit", Critical: true, RequiredTraced: true, MapsTo: []string{"durable-audit-admission"}}}}
+	return policy, request, authdomains.CoverageManifest{SchemaVersion: authdomains.SchemaV1, ObjectID: authdomains.PAObjectID, EnforcementClaim: false, NeutralReplay: neutral, Seams: seams}
 }
 
 func hookJSON(toolName, command string) string {

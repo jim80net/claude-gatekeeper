@@ -304,6 +304,48 @@ The shipped [force-push matrix](examples/force-push-policy-tests.toml) captures
 the wrapper, argument-position, newline, subshell, and false-positive probes
 used to review the default policy.
 
+### Inspect Authorization Domains contracts (shadow only)
+
+`auth-domains shadow` compiles a synthetic D1 block/exception generation and
+simulates one request against an explicit coverage manifest:
+
+```text
+claude-gatekeeper auth-domains shadow \
+  --policy examples/auth-domains/policy.json \
+  --request examples/auth-domains/request-protected.json \
+  --coverage examples/auth-domains/coverage.json
+```
+
+This is I1a inspection, **not enforcement**. It is not called by the Claude,
+Codex, or Grok hook path; it does not emit a harness permission decision; it
+does not read, locate, mount, or provision credentials; and every report states
+`enforcement: false`. Ordinary objects remain open by default. The only initial
+protected action is `read` on one logical exact-object identifier.
+
+The table and `--json` output enumerate contract-only final-PEP, audit, replay,
+policy-store, and lifecycle gaps. Exit `0` means valid inputs produced a shadow
+report (including a simulated denial), `1` means the contract or coverage is
+non-conformant, and `2` means invocation, decoding, or I/O failed. See
+[`examples/auth-domains/`](examples/auth-domains/) and the bounded
+[`OpenSpec change`](openspec/changes/authorization-domains-d1-shadow/).
+
+The JSON report also exposes the deliberately lossy neutral-replay mapping.
+`permit_exception` is not collapsed into ordinary allow: it is shown as
+`allow` / `exact_exception` with `representable_in_pinned_v1: false`. The report
+lists neutral-v1 omissions (request, generation, classifier, time,
+canonicalization, and exception/constraint/lease evidence). The D1
+`credential://` logical object and the independent checker's inert `fixture://`
+object are distinct non-path identities. Neutral coverage requires a traced
+ordinary-work record even though that seam is non-critical.
+
+The neutral/lifecycle alignment is pinned to landed Core main
+`cb557239a90a82c34686d6ca55046a7b2c9f3129`, checker
+`8e376c79d64bc720b280ab839058cc71ca774990`, and all 38 probe IDs in lifecycle
+digest `4a5d12ff…`. Unknown, missing, duplicate, or untraced probes fail.
+Unknown/drift evidence must suppress the claim, fail or quarantine its receipt,
+provide a reason, mark claims invalid, and list incomplete IDs. The shadow does
+not reimplement that oracle or convert its evidence into enforcement.
+
 ## Debugging
 
 Run with `--debug` to see rule evaluation on stderr:

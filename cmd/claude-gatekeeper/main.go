@@ -20,6 +20,7 @@
 //	uninstall Remove the Claude hook registration.
 //	doctor    Inventory live gatekeeper hook surfaces and report drift.
 //	test      Run declarative policy cases against live or explicit config.
+//	auth-domains shadow  Inspect D1 contracts without enforcing them.
 //	verify-release Verify a published release and live binary stamps.
 package main
 
@@ -34,6 +35,7 @@ import (
 	"time"
 
 	"github.com/jim80net/claude-gatekeeper/internal/adapter"
+	"github.com/jim80net/claude-gatekeeper/internal/authdomains"
 	"github.com/jim80net/claude-gatekeeper/internal/inventory"
 	"github.com/jim80net/claude-gatekeeper/internal/migrate"
 	"github.com/jim80net/claude-gatekeeper/internal/policytest"
@@ -65,6 +67,8 @@ func run(stdin io.Reader, stdout io.Writer, args []string) int {
 			return runDoctor(stdout, args[1:])
 		case "test":
 			return runPolicyTest(stdout, args[1:])
+		case "auth-domains":
+			return runAuthDomains(stdout, args[1:])
 		case "verify-release":
 			return runReleaseVerify(stdout, args[1:])
 		case "version":
@@ -106,6 +110,58 @@ func run(stdin io.Reader, stdout io.Writer, args []string) int {
 	installDefaultConfig()
 
 	return runHook(stdin, stdout, ad, *debug)
+}
+
+func runAuthDomains(stdout io.Writer, args []string) int {
+	if len(args) == 0 || args[0] != "shadow" {
+		fmt.Fprintln(os.Stderr, "usage: claude-gatekeeper auth-domains shadow --policy generation.json --request request.json --coverage coverage.json [--json]")
+		return 2
+	}
+	fs := flag.NewFlagSet("auth-domains shadow", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	policyPath := fs.String("policy", "", "D1 policy generation JSON")
+	requestPath := fs.String("request", "", "D1 request JSON")
+	coveragePath := fs.String("coverage", "", "D1 coverage manifest JSON")
+	jsonOutput := fs.Bool("json", false, "Emit machine-readable JSON")
+	if err := fs.Parse(args[1:]); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
+		return 2
+	}
+	if fs.NArg() != 0 || *policyPath == "" || *requestPath == "" || *coveragePath == "" {
+		fmt.Fprintln(os.Stderr, "auth-domains shadow: --policy, --request, and --coverage are required")
+		return 2
+	}
+	policy, err := authdomains.LoadPolicy(*policyPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "auth-domains shadow: policy: %v\n", err)
+		return 2
+	}
+	request, err := authdomains.LoadRequest(*requestPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "auth-domains shadow: request: %v\n", err)
+		return 2
+	}
+	coverage, err := authdomains.LoadCoverage(*coveragePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "auth-domains shadow: coverage: %v\n", err)
+		return 2
+	}
+	report := authdomains.Shadow(policy, request, coverage, time.Now().UTC())
+	if *jsonOutput {
+		err = authdomains.WriteJSON(stdout, report)
+	} else {
+		err = authdomains.WriteTable(stdout, report)
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "auth-domains shadow: report: %v\n", err)
+		return 2
+	}
+	if !report.Conformant {
+		return 1
+	}
+	return 0
 }
 
 func runReleaseVerify(stdout io.Writer, args []string) int {

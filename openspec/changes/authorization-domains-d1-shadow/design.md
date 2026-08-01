@@ -1,0 +1,153 @@
+# Design — bounded contracts, inspection-only shadow
+
+## 1. Authority model
+
+Authorization Domains is a blocklist around named critical resources, not a
+fleet-wide allowlist. A block can remove authority for an exact object/action;
+it never grants authority over ordinary work. An exact exception can restore
+that one operation for one authenticated principal, worker, session, and
+server-resolved domain.
+
+The initial registry is exactly `read`. Unknown actions remain open on ordinary
+objects and deny once the exact object is protected.
+
+## 2. Contract boundary
+
+The D1 documents use schema version `authorization-domains/v1`. JSON decoding
+rejects unknown fields. A generation is immutable, digest-addressed, and
+published conceptually by expected-generation compare-and-swap with last-good
+retention. The I1a command validates and simulates that transition but does not
+persist or publish a generation.
+
+The first object is the logical identifier
+`credential://pa/google-service-account-keyfile/v1`. It is deliberately not a
+path. No physical locator appears in policy, decisions, reports, tests, or logs.
+
+## 3. Context and identity
+
+Protected simulation requires a complete `DomainContext` minted by the
+configured server authority. Its principal, worker, session, resolved domain,
+runtime identity, issue time, and expiry are evaluated. A caller's claimed
+domain remains separate evidence and cannot replace any resolved field.
+
+Ordinary simulation does not require a domain context. This preserves the
+open-by-default posture and avoids turning the new context into a universal
+gate.
+
+## 4. Shadow command
+
+```text
+claude-gatekeeper auth-domains shadow \
+  --policy generation.json \
+  --request request.json \
+  --coverage coverage-manifest.json \
+  [--json]
+```
+
+The command is a read-only offline analyzer:
+
+1. Strictly decode and compile inputs.
+2. Validate registry, exact selectors, identities, generation, and timestamps.
+3. Simulate `permit_unblocked`, `permit_exception`, or `deny_blocked`.
+4. Inspect the coverage manifest and list contract-only, missing, unknown, or
+   untraced critical seams.
+5. Emit `mode: shadow`, `enforcement: false`, the simulated decision, claimed
+   and resolved context evidence, and warnings.
+
+Exit 0 means the inputs were valid and a report was produced, including a
+simulated denial. Exit 1 means the candidate or coverage is not conformant.
+Exit 2 means invocation, decoding, or I/O failed. No exit code or report is a
+harness permission decision.
+
+## 5. Honest coverage
+
+The coverage manifest is data, not proof. Each critical seam has an owner,
+trace action, negative fixture, state, and known gap. Only
+`implemented_and_probed` could support a future protection claim; this change
+accepts and reports `contract_only` and always keeps `enforcement: false`.
+Unknown, missing, or untraced critical seams make the shadow report
+non-conformant.
+
+## 6. Lifecycle and isolation
+
+Lifecycle receipts model `provision -> operate -> preserve -> archive`, bounded
+queues/concurrency/timeouts, descendant cleanup, and cleared/reconstructed child
+environments. These mechanics are not isolation. Only recorded cross-worker
+probes may derive `dedicated_uid`, `rootless_container`, or
+`dedicated_uid+rootless_container`; otherwise the claim is `none`. Shared UID,
+process groups alone, privileged containers, host PID/user-namespace
+violations, broad host mounts, engine-control sockets, host root, unmanifested
+aliases/descriptors/endpoints, drift, or indeterminate mandatory probes
+invalidate the relevant claim. Host root is explicitly outside the threat model
+and every receipt must say so.
+
+The model uses `ABSENT -> PROVISIONING -> READY -> OPERATING -> QUIESCING ->
+PRESERVED -> ARCHIVING -> ARCHIVED`, with `QUARANTINED` for partial,
+contradictory, escaped, or indeterminate states. Recovery re-observes reality
+from the last durable receipt and never automatically returns quarantine to
+operation. Archive completeness separately proves revoke, empty supervisor
+scope, mount/endpoint/session absence, artifact custody, useful-artifact
+readability, protected-material exclusion, and honest residuals.
+
+I1a only validates the model and receipts. It does not create a user, container,
+process, mount, credential binding, or archive.
+
+## 7. Independence and hook non-interference
+
+The independent replay oracle belongs outside the production evaluator and
+canonicalizer dependency graph. This implementation emits replay-compatible
+evidence but does not import or copy the independent checker into the runtime
+package.
+
+### 7.1 Neutral replay mapping is intentionally lossy
+
+| D1 decision | Neutral outcome | Neutral reason | Pinned-v1 status |
+| --- | --- | --- | --- |
+| `permit_unblocked` | `allow` | `unprotected` | representable |
+| `deny_blocked` | `deny` | `protected_block` | representable |
+| `permit_exception` | `allow` | `exact_exception` | **not representable** until neutral reason and exception binding are extended |
+
+The shadow report always represents this mapping and marks the last row as
+lossy rather than collapsing it into ordinary allow. The pinned neutral shape
+omits full D1 `request_id`, policy generation, classifier version,
+request/decision times, and full canonicalization evidence. Exception permits
+also lose exception ID, evaluated constraints, and lease expiry. These are
+disclosed gaps, not authorization shortcuts.
+
+The opaque logical PA object
+`credential://pa/google-service-account-keyfile/v1` belongs to the D1 policy
+contract. The independent checker uses the inert
+`fixture://authorization-domains/protected/exact-read-object`. Neither is a
+physical path, and the fixture URI is never an alias for the logical object.
+
+The integration is stricter than “critical seams only”: neutral
+`ordinary-work` is non-critical but is still required and traced, because the
+open-by-default invariant needs positive evidence that ordinary work did not
+silently become closed.
+
+Lifecycle conformance is delegated to the independent checker pinned at
+`8e376c79d64bc720b280ab839058cc71ca774990`, not reimplemented by the shadow.
+Its registry is all 38 IDs in lifecycle contract digest
+`4a5d12ff96b136db5bd7e78c9467a222c242be99c060d5a17fe267725bc9caff`.
+Unknown, missing, duplicate, or untraced probes fail. Unknown or drift evidence
+can conform only when it provides a reason, suppresses `claim_after` to `none`,
+fails or quarantines the receipt, reports `claims_valid: false`, and lists the
+affected IDs as incomplete. The shadow validates the exact checker, schema,
+digest, and registry pins and never turns that evidence into enforcement.
+
+`runHook` does not import or call Authorization Domains. The shadow command is
+reachable only through its explicit subcommand, reads explicit fixture paths,
+and writes only its report stream. Cross-harness tests compare existing Claude,
+Codex, and Grok outputs with the feature present.
+
+## 8. Deferred work
+
+I1b credential binding, durable audit storage, replay claims, final-PEP
+materialization, lifecycle provisioning, PA activation, and production
+enforcement remain separate gated work. New actions beyond `read` also require
+design review.
+
+Review notes for a later bounded change: align the core and lifecycle artifact's
+isolation-claim tokens; deepen compile/CAS/idempotency differential fixtures;
+and keep public artifacts free of host-private provenance. None is implemented
+or treated as authority in I1a.

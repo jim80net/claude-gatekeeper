@@ -1,0 +1,8 @@
+schema: spec-driven
+
+context: |
+  gatekeeper-claude is a Go 1.22 unified permission hook for Claude Code,
+  Codex, and Grok. Authorization Domains is introduced as an open-by-default,
+  exact-object design. D1 is executable contracts without runtime authority;
+  I1a is inspection-only shadow evaluation and MUST NOT affect hook verdicts,
+  credentials, worker provisioning, or production access.
