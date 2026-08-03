@@ -124,6 +124,43 @@ func TestCollectRecognizesEnvPrefixAndQuotedBinaryPath(t *testing.T) {
 	}
 }
 
+func TestCollectResolvesBareGatekeeperCommandThroughPATH(t *testing.T) {
+	home := t.TempDir()
+	bin := filepath.Join(home, "bin", "claude-gatekeeper")
+	writeFile(t, bin, "binary", 0755)
+	writeHook(t, filepath.Join(home, ".grok", "hooks", "gatekeeper.json"), "claude-gatekeeper --harness grok")
+
+	var probed string
+	report, err := Collect(Options{
+		Home:            home,
+		ExpectedBinary:  bin,
+		ExpectedVersion: "v",
+		MinSurfaces:     1,
+		LookPath: func(command string) (string, error) {
+			if command != "claude-gatekeeper" {
+				t.Fatalf("look path command = %q", command)
+			}
+			return bin, nil
+		},
+		VersionProbe: func(path string) (string, error) {
+			probed = path
+			return "v", nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.OK || len(report.Surfaces) != 1 {
+		t.Fatalf("report = %#v", report)
+	}
+	if got := report.Surfaces[0].BinaryPath; got != bin {
+		t.Fatalf("binary path = %q, want %q", got, bin)
+	}
+	if probed != bin {
+		t.Fatalf("version probe path = %q, want %q", probed, bin)
+	}
+}
+
 func TestCollectFailsClosedOnUnexpectedShapeAndUnrecognizedGatekeeper(t *testing.T) {
 	home := t.TempDir()
 	writeFile(t, filepath.Join(home, ".grok", "hooks", "gatekeeper.json"), `{"hooks":{"PreToolUse":{"command":"/opt/claude-gatekeeper"}}}`, 0644)
