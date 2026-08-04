@@ -129,7 +129,8 @@ func Collect(opts Options) (Report, error) {
 		}
 		for _, command := range commands {
 			parsed, parseErr := parseCommand(command)
-			if parseErr != nil || (!referencesGatekeeper(parsed) && !(c.pluginRoot != "" && isPluginWrapper(parsed, c.pluginRoot))) {
+			harness, harnessErr := parseHarness(parsed)
+			if parseErr != nil || harnessErr != nil || (!referencesGatekeeper(parsed) && !(c.pluginRoot != "" && isPluginWrapper(parsed, c.pluginRoot))) {
 				summary.Unrecognized = append(summary.Unrecognized, command)
 				if looksLikeGatekeeper(command) {
 					report.OK = false
@@ -144,7 +145,7 @@ func Collect(opts Options) (Report, error) {
 				continue
 			}
 			seen[key] = true
-			s := inspect(c, command, parsed, opts)
+			s := inspect(c, command, parsed, harness, opts)
 			if len(s.Drift) > 0 {
 				report.OK = false
 			}
@@ -301,25 +302,40 @@ func isEnvAssignment(word string) bool {
 	return true
 }
 
-func inspect(c candidate, command string, parsed parsedCommand, opts Options) Surface {
+func parseHarness(parsed parsedCommand) (string, error) {
+	harness := "claude"
+	if value := parsed.Env["GATEKEEPER_HARNESS"]; value != "" {
+		harness = value
+	}
+	for i := 0; i < len(parsed.Args); i++ {
+		arg := parsed.Args[i]
+		switch {
+		case arg == "--harness" || arg == "-harness":
+			if i+1 >= len(parsed.Args) || strings.HasPrefix(parsed.Args[i+1], "-") {
+				return "", fmt.Errorf("%s requires a value", arg)
+			}
+			harness = parsed.Args[i+1]
+			i++ // Consume the flag's value; do not parse it again as an argument.
+		case strings.HasPrefix(arg, "--harness=") || strings.HasPrefix(arg, "-harness="):
+			_, value, _ := strings.Cut(arg, "=")
+			if value == "" {
+				return "", fmt.Errorf("%s requires a value", arg)
+			}
+			harness = value
+		case strings.HasPrefix(arg, "--harness") || strings.HasPrefix(arg, "-harness"):
+			return "", fmt.Errorf("unrecognized harness flag %q", arg)
+		}
+	}
+	return harness, nil
+}
+
+func inspect(c candidate, command string, parsed parsedCommand, harness string, opts Options) Surface {
 	binary := expandHome(parsed.Binary, opts.Home)
 	if c.pluginRoot != "" {
 		binary = filepath.Join(c.pluginRoot, "bin", binaryName)
 	} else if isBareCommand(binary) {
 		if resolved, err := opts.LookPath(binary); err == nil {
 			binary = resolved
-		}
-	}
-	harness := "claude"
-	if value := parsed.Env["GATEKEEPER_HARNESS"]; value != "" {
-		harness = value
-	}
-	for i := 0; i < len(parsed.Args); i++ {
-		if parsed.Args[i] == "--harness" && i+1 < len(parsed.Args) {
-			harness = parsed.Args[i+1]
-		}
-		if strings.HasPrefix(parsed.Args[i], "--harness=") {
-			harness = strings.TrimPrefix(parsed.Args[i], "--harness=")
 		}
 	}
 	expectedBinary := cleanPath(opts.ExpectedBinary)

@@ -124,6 +124,45 @@ func TestCollectRecognizesEnvPrefixAndQuotedBinaryPath(t *testing.T) {
 	}
 }
 
+func TestCollectParsesHarnessFlagFormsFailClosed(t *testing.T) {
+	tests := []struct {
+		name             string
+		flag             string
+		wantRecognized   int
+		wantUnrecognized int
+	}{
+		{name: "single dash", flag: "-harness grok", wantRecognized: 1},
+		{name: "single dash equals", flag: "-harness=grok", wantRecognized: 1},
+		{name: "double dash separated", flag: "--harness grok", wantRecognized: 1},
+		{name: "double dash equals", flag: "--harness=grok", wantRecognized: 1},
+		{name: "malformed single dash", flag: "-harness:grok", wantUnrecognized: 1},
+		{name: "missing harness value", flag: "--harness", wantUnrecognized: 1},
+		{name: "flag shaped harness value", flag: "--harness --json", wantUnrecognized: 1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			bin := filepath.Join(home, "claude-gatekeeper")
+			writeFile(t, bin, "binary", 0755)
+			writeHook(t, filepath.Join(home, ".grok", "hooks", "gatekeeper.json"), bin+" "+tc.flag)
+
+			report, err := Collect(Options{Home: home, ExpectedBinary: bin, MinSurfaces: tc.wantRecognized, VersionProbe: func(string) (string, error) { return "v", nil }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(report.Files) != 1 || report.Files[0].Recognized != tc.wantRecognized || len(report.Files[0].Unrecognized) != tc.wantUnrecognized {
+				t.Fatalf("report = %#v", report)
+			}
+			if tc.wantRecognized == 1 && (!report.OK || len(report.Surfaces) != 1 || report.Surfaces[0].Harness != "grok") {
+				t.Fatalf("recognized report = %#v", report)
+			}
+			if tc.wantUnrecognized == 1 && (report.OK || len(report.Files[0].Warnings) == 0) {
+				t.Fatalf("malformed harness flag was not visibly rejected: %#v", report)
+			}
+		})
+	}
+}
+
 func TestCollectResolvesBareGatekeeperCommandThroughPATH(t *testing.T) {
 	home := t.TempDir()
 	bin := filepath.Join(home, "bin", "claude-gatekeeper")
