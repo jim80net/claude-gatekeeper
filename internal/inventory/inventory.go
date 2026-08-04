@@ -315,7 +315,7 @@ func parseHarness(parsed parsedCommand) (string, error) {
 				return "", fmt.Errorf("%s requires a value", arg)
 			}
 			harness = parsed.Args[i+1]
-			i++
+			i++ // Consume the flag's value; do not parse it again as an argument.
 		case strings.HasPrefix(arg, "--harness=") || strings.HasPrefix(arg, "-harness="):
 			_, value, _ := strings.Cut(arg, "=")
 			if value == "" {

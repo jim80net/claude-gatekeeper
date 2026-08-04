@@ -136,6 +136,8 @@ func TestCollectParsesHarnessFlagFormsFailClosed(t *testing.T) {
 		{name: "double dash separated", flag: "--harness grok", wantRecognized: 1},
 		{name: "double dash equals", flag: "--harness=grok", wantRecognized: 1},
 		{name: "malformed single dash", flag: "-harness:grok", wantUnrecognized: 1},
+		{name: "missing harness value", flag: "--harness", wantUnrecognized: 1},
+		{name: "flag shaped harness value", flag: "--harness --json", wantUnrecognized: 1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
