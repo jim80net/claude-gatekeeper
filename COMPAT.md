@@ -20,7 +20,7 @@
 
 ## What must keep working (dogfood)
 
-1. **Hooks** invoke `/home/jim/go/bin/claude-gatekeeper --harness {grok,codex}` (or plugin `bin/run.sh` for Claude).
+1. **Hooks** invoke `$HOME/go/bin/claude-gatekeeper --harness {grok,codex}` (or plugin `bin/run.sh` for Claude).
 2. **`make download` / `bin/install.sh`** fetch from GitHub Releases under the **new** repo name (this tree) with **legacy asset** filenames.
 3. **Existing clones** with `origin = …/claude-gatekeeper.git` continue via redirect; prefer `git remote set-url origin https://github.com/jim80net/gatekeeper-claude.git`.
 4. **Authority domain** (flotilla#551): seats owning this product should list `jim80net/gatekeeper-claude` in `.gatekeeper/domain` (not the old name).
@@ -54,6 +54,6 @@ curl -fsSIL "https://github.com/jim80net/gatekeeper-claude/releases/latest/downl
 curl -fsSIL "https://github.com/jim80net/claude-gatekeeper/releases/latest/download/claude-gatekeeper_linux_amd64.tar.gz" | head -5
 
 # fleet binary still gates
-echo '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 1 --repo jim80net/flotilla"},"cwd":"/path/to/a1-fleet-ops"}' \
+echo '{"tool_name":"Bash","tool_input":{"command":"gh pr merge 1 --repo jim80net/flotilla"},"cwd":"/path/to/your-repo"}' \
   | claude-gatekeeper --harness claude
 ```
