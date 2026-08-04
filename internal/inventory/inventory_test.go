@@ -1,8 +1,11 @@
 package inventory
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -355,6 +358,88 @@ func TestWriteJSONAndTable(t *testing.T) {
 		if !strings.Contains(table.String(), want) {
 			t.Errorf("table missing %q:\n%s", want, table.String())
 		}
+	}
+}
+
+func TestPublishedVersionInvariantNegativeControls(t *testing.T) {
+	t.Run("stale binary names both versions", func(t *testing.T) {
+		home := t.TempDir()
+		bin := filepath.Join(home, "bin", "claude-gatekeeper")
+		writeFile(t, bin, "#!/bin/sh\necho 'claude-gatekeeper 1.5.1'\n", 0755)
+		writeHook(t, filepath.Join(home, ".claude", "settings.json"), bin)
+		report, err := Collect(Options{Home: home, ExpectedBinary: bin, MinSurfaces: 1, PublishedVersionProbe: func() (string, error) { return "v1.6.0", nil }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if report.OK || report.VersionInvariant.Status != "fail" || !strings.Contains(report.VersionInvariant.Reason, "1.5.1") || !strings.Contains(report.VersionInvariant.Reason, "1.6.0") {
+			t.Fatalf("invariant = %#v", report.VersionInvariant)
+		}
+	})
+
+	t.Run("unreachable published source is unknown", func(t *testing.T) {
+		home := t.TempDir()
+		bin := filepath.Join(home, "bin", "claude-gatekeeper")
+		writeFile(t, bin, "#!/bin/sh\necho 'claude-gatekeeper 1.6.0'\n", 0755)
+		writeHook(t, filepath.Join(home, ".claude", "settings.json"), bin)
+		report, err := Collect(Options{Home: home, MinSurfaces: 1, PublishedVersionProbe: func() (string, error) { return "", errors.New("offline") }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if report.OK || report.VersionInvariant.Status != "unknown" || !strings.Contains(report.VersionInvariant.Reason, "offline") {
+			t.Fatalf("invariant = %#v", report.VersionInvariant)
+		}
+	})
+
+	t.Run("non executable binary is unknown without derived version", func(t *testing.T) {
+		home := t.TempDir()
+		bin := filepath.Join(home, "cache", "1.3.1", "bin", "claude-gatekeeper")
+		writeFile(t, bin, "not executable", 0644)
+		writeHook(t, filepath.Join(home, ".claude", "settings.json"), bin)
+		report, err := Collect(Options{Home: home, MinSurfaces: 1, PublishedVersionProbe: func() (string, error) { return "v1.6.0", nil }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		observation := report.VersionInvariant.Observations[0]
+		if report.OK || report.VersionInvariant.Status != "unknown" || observation.ObservedVersion != "" || observation.PathVersion != "" {
+			t.Fatalf("invariant = %#v", report.VersionInvariant)
+		}
+		var output strings.Builder
+		if err := WriteJSON(&output, report); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(output.String(), `"observed_version": "1.3.1"`) || strings.Contains(output.String(), `"path_version"`) {
+			t.Fatalf("output derived a version from the path: %s", output.String())
+		}
+	})
+
+	t.Run("plugin directory mismatch is not current", func(t *testing.T) {
+		home := t.TempDir()
+		plugin := filepath.Join(home, ".claude", "plugins", "cache", "market", "claude-gatekeeper", "1.3.1")
+		writeFile(t, filepath.Join(home, ".claude", "plugins", "installed_plugins.json"), `{"plugins":{"claude-gatekeeper@market":[{"installPath":"`+plugin+`"}]}}`, 0644)
+		writeFile(t, filepath.Join(plugin, "hooks", "hooks.json"), `{"hooks":{"PreToolUse":[{"hooks":[{"command":"${CLAUDE_PLUGIN_ROOT}/bin/run.sh"}]}]}}`, 0644)
+		writeFile(t, filepath.Join(plugin, "bin", "claude-gatekeeper"), "#!/bin/sh\necho 'claude-gatekeeper 1.5.1'\n", 0755)
+		report, err := Collect(Options{Home: home, MinSurfaces: 1, PublishedVersionProbe: func() (string, error) { return "v1.6.0", nil }})
+		if err != nil {
+			t.Fatal(err)
+		}
+		observation := report.VersionInvariant.Observations[0]
+		if report.OK || report.VersionInvariant.Status != "fail" || observation.PathVersion != "1.3.1" || observation.ObservedVersion != "1.5.1" || !strings.Contains(observation.Reason, "published latest 1.6.0") || !strings.Contains(observation.Reason, "plugin path version 1.3.1") {
+			t.Fatalf("invariant = %#v", report.VersionInvariant)
+		}
+	})
+}
+
+func TestFetchPublishedLatest(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") == "" {
+			t.Error("missing user agent")
+		}
+		_, _ = w.Write([]byte(`{"tag_name":"v1.6.0"}`))
+	}))
+	defer server.Close()
+	version, err := FetchPublishedLatest(context.Background(), server.Client(), server.URL)
+	if err != nil || version != "v1.6.0" {
+		t.Fatalf("version=%q err=%v", version, err)
 	}
 }
 

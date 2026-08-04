@@ -61,6 +61,7 @@ claude-gatekeeper doctor --json
 claude-gatekeeper doctor --expected-binary ~/go/bin/claude-gatekeeper
 claude-gatekeeper doctor --expected-version 1.3.1
 claude-gatekeeper doctor --min-surfaces 3
+claude-gatekeeper doctor --json --check-latest --min-surfaces 3
 ```
 
 It inventories live references in `~/.grok/hooks/gatekeeper.json`,
@@ -77,7 +78,12 @@ Plugin `bin/run.sh` entries resolve to the plugin's adjacent
 Exit status is 0 when all discovered surfaces match, 1 when drift is found, and
 2 when inventory or output fails. JSON output is intended for fleet automation
 and contains `ok`, `expected_binary`, `expected_version`, `min_surfaces`,
-`warnings`, `files`, and `surfaces` fields.
+`warnings`, `files`, and `surfaces` fields. With `--check-latest`, it also
+contains a `version_invariant` built from executable-reported surface versions
+and the latest published release. `fail` and `unknown` both exit nonzero; the
+published source or an executable probe can never fail into `OK`. See
+[`docs/doctor-detector.md`](docs/doctor-detector.md) for the independent
+user-timer template and its deployment boundary.
 The `inventory` subcommand is an exact alias for `doctor`.
 
 The automated inventory is intentionally user-global. Project-scoped

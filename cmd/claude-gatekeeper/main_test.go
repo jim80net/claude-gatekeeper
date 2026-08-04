@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -327,6 +329,34 @@ func TestRunDoctorFailureExitCodes(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestRunDoctorJSONChecksPublishedLatest(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	bin := filepath.Join(home, "bin", "claude-gatekeeper")
+	if err := os.MkdirAll(filepath.Dir(bin), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho 'claude-gatekeeper 1.5.1'\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	settings := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settings), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(settings, []byte(`{"hooks":{"PreToolUse":[{"hooks":[{"command":"`+bin+`"}]}]}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"tag_name":"v1.6.0"}`)
+	}))
+	defer server.Close()
+	var stdout bytes.Buffer
+	code := run(strings.NewReader(""), &stdout, []string{"doctor", "--json", "--check-latest", "--latest-release-url", server.URL, "--expected-binary", bin, "--min-surfaces", "1"})
+	if code != 1 || !strings.Contains(stdout.String(), `"status": "fail"`) || !strings.Contains(stdout.String(), `"published_latest": "1.6.0"`) || !strings.Contains(stdout.String(), `"observed_version": "1.5.1"`) {
+		t.Fatalf("code=%d output=%s", code, stdout.String())
+	}
 }
 
 type errorWriter struct{ err error }
