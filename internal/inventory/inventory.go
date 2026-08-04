@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,23 +23,45 @@ const binaryName = "claude-gatekeeper"
 
 // Options controls hook discovery and drift expectations.
 type Options struct {
-	Home            string
-	ExpectedBinary  string
-	ExpectedVersion string
-	MinSurfaces     int
-	VersionProbe    func(string) (string, error)
-	LookPath        func(string) (string, error)
+	Home                  string
+	ExpectedBinary        string
+	ExpectedVersion       string
+	MinSurfaces           int
+	VersionProbe          func(string) (string, error)
+	LookPath              func(string) (string, error)
+	PublishedVersionProbe func() (string, error)
 }
 
 // Report is the machine-readable result of a hook inventory.
 type Report struct {
-	OK              bool          `json:"ok"`
-	ExpectedBinary  string        `json:"expected_binary"`
-	ExpectedVersion string        `json:"expected_version"`
-	MinSurfaces     int           `json:"min_surfaces"`
-	Warnings        []string      `json:"warnings"`
-	Files           []FileSummary `json:"files"`
-	Surfaces        []Surface     `json:"surfaces"`
+	OK               bool              `json:"ok"`
+	ExpectedBinary   string            `json:"expected_binary"`
+	ExpectedVersion  string            `json:"expected_version"`
+	MinSurfaces      int               `json:"min_surfaces"`
+	Warnings         []string          `json:"warnings"`
+	Files            []FileSummary     `json:"files"`
+	Surfaces         []Surface         `json:"surfaces"`
+	VersionInvariant *VersionInvariant `json:"version_invariant,omitempty"`
+}
+
+// VersionInvariant compares versions reported by enforcing binaries with the
+// latest published release. Status is current, fail, or unknown.
+type VersionInvariant struct {
+	Status          string               `json:"status"`
+	PublishedLatest string               `json:"published_latest,omitempty"`
+	Reason          string               `json:"reason,omitempty"`
+	Observations    []VersionObservation `json:"observations"`
+}
+
+// VersionObservation records one enforcing surface's executable-derived version.
+type VersionObservation struct {
+	Surface         string `json:"surface"`
+	BinaryPath      string `json:"binary_path"`
+	ObservedVersion string `json:"observed_version,omitempty"`
+	ExpectedVersion string `json:"expected_version,omitempty"`
+	PathVersion     string `json:"path_version,omitempty"`
+	Status          string `json:"status"`
+	Reason          string `json:"reason,omitempty"`
 }
 
 // FileSummary reports discovery coverage for one existing hook file.
@@ -168,7 +191,116 @@ func Collect(opts Options) (Report, error) {
 		return left.Command < right.Command
 	})
 	sort.Slice(report.Files, func(i, j int) bool { return report.Files[i].Path < report.Files[j].Path })
+	if opts.PublishedVersionProbe != nil {
+		report.VersionInvariant = evaluateVersionInvariant(report.Surfaces, opts.PublishedVersionProbe)
+		if report.VersionInvariant.Status != "current" {
+			report.OK = false
+		}
+	}
 	return report, nil
+}
+
+func evaluateVersionInvariant(surfaces []Surface, publishedProbe func() (string, error)) *VersionInvariant {
+	result := &VersionInvariant{Status: "unknown", Observations: []VersionObservation{}}
+	published, err := publishedProbe()
+	if err != nil {
+		result.Reason = "published latest unavailable: " + err.Error()
+		return result
+	}
+	result.PublishedLatest = normalizeVersion(published)
+	if result.PublishedLatest == "" {
+		result.Reason = "published latest returned an empty version"
+		return result
+	}
+	if len(surfaces) == 0 {
+		result.Reason = "no enforcing surfaces discovered"
+		return result
+	}
+	result.Status = "current"
+	for _, surface := range surfaces {
+		observation := VersionObservation{Surface: surface.Kind, BinaryPath: surface.BinaryPath, ExpectedVersion: result.PublishedLatest, Status: "current"}
+		if surface.Version == "" {
+			observation.Status = "unknown"
+			observation.Reason = "binary version unavailable; execution probe did not succeed"
+			if result.Status != "fail" {
+				result.Status = "unknown"
+				result.Reason = observation.Reason
+			}
+		} else {
+			observation.ObservedVersion = normalizeVersion(surface.Version)
+			if observation.ObservedVersion != result.PublishedLatest {
+				observation.Status = "stale"
+				observation.Reason = fmt.Sprintf("enforcing version %s != published latest %s", observation.ObservedVersion, result.PublishedLatest)
+				result.Status = "fail"
+				result.Reason = observation.Reason
+			}
+			if surface.Kind == "claude-plugin" {
+				observation.PathVersion = pluginPathVersion(surface.BinaryPath)
+				if observation.PathVersion != "" && normalizeVersion(observation.PathVersion) != observation.ObservedVersion {
+					observation.Status = "stale"
+					pathReason := fmt.Sprintf("plugin path version %s != binary-reported version %s", observation.PathVersion, observation.ObservedVersion)
+					if observation.Reason == "" {
+						observation.Reason = pathReason
+					} else {
+						observation.Reason += "; " + pathReason
+					}
+					result.Status = "fail"
+					result.Reason = pathReason
+				}
+			}
+		}
+		result.Observations = append(result.Observations, observation)
+	}
+	return result
+}
+
+func normalizeVersion(version string) string {
+	return strings.TrimPrefix(strings.TrimSpace(version), "v")
+}
+
+func pluginPathVersion(binary string) string {
+	if filepath.Base(filepath.Dir(binary)) != "bin" {
+		return ""
+	}
+	version := filepath.Base(filepath.Dir(filepath.Dir(binary)))
+	parts := strings.Split(version, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	for _, part := range parts {
+		if part == "" || strings.Trim(part, "0123456789") != "" {
+			return ""
+		}
+	}
+	return version
+}
+
+// FetchPublishedLatest returns the tag of the latest non-draft GitHub release.
+func FetchPublishedLatest(ctx context.Context, client *http.Client, url string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "claude-gatekeeper-doctor")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("release endpoint returned %s", resp.Status)
+	}
+	var release struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return "", err
+	}
+	if release.TagName == "" {
+		return "", errors.New("release response has no tag_name")
+	}
+	return release.TagName, nil
 }
 
 // HasFileErrors reports whether any discovered hook file could not be read or parsed.
@@ -554,6 +686,19 @@ func WriteTable(w io.Writer, report Report) error {
 	}
 	for _, warning := range report.Warnings {
 		if _, err := fmt.Fprintf(w, "WARNING: %s\n", warning); err != nil {
+			return err
+		}
+	}
+	if report.VersionInvariant != nil {
+		if _, err := fmt.Fprintf(w, "VERSION INVARIANT: %s", strings.ToUpper(report.VersionInvariant.Status)); err != nil {
+			return err
+		}
+		if report.VersionInvariant.Reason != "" {
+			if _, err := fmt.Fprintf(w, " — %s", report.VersionInvariant.Reason); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprintln(w); err != nil {
 			return err
 		}
 	}

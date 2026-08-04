@@ -1,0 +1,8 @@
+[Unit]
+Description=Audit live Gatekeeper hooks and published-version invariant
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/go/bin/claude-gatekeeper doctor --json --check-latest --min-surfaces 3

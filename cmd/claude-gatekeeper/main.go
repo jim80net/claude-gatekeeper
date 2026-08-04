@@ -29,6 +29,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -264,6 +265,8 @@ func runDoctor(stdout io.Writer, args []string) int {
 	expectedBinary := fs.String("expected-binary", "", "Expected binary path (default: this executable)")
 	expectedVersion := fs.String("expected-version", version, "Expected version stamp")
 	minSurfaces := fs.Int("min-surfaces", 1, "Minimum recognized surfaces required for success")
+	checkLatest := fs.Bool("check-latest", false, "Compare enforcing binary versions with the latest published release")
+	latestURL := fs.String("latest-release-url", "https://api.github.com/repos/jim80net/gatekeeper-claude/releases/latest", "Latest published release API URL")
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return 0
@@ -279,7 +282,15 @@ func runDoctor(stdout io.Writer, args []string) int {
 			*expectedBinary = exe
 		}
 	}
-	report, err := inventory.Collect(inventory.Options{ExpectedBinary: *expectedBinary, ExpectedVersion: *expectedVersion, MinSurfaces: *minSurfaces})
+	options := inventory.Options{ExpectedBinary: *expectedBinary, ExpectedVersion: *expectedVersion, MinSurfaces: *minSurfaces}
+	if *checkLatest {
+		options.PublishedVersionProbe = func() (string, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			return inventory.FetchPublishedLatest(ctx, &http.Client{Timeout: 10 * time.Second}, *latestURL)
+		}
+	}
+	report, err := inventory.Collect(options)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "doctor: %v\n", err)
 		return 2

@@ -22,6 +22,7 @@ archives:
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
     files:
       - hooks/**
+      - deploy/systemd/**
       - .claude-plugin/**
       - bin/run.sh
       - bin/run.ps1

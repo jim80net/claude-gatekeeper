@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Gatekeeper Doctor independently of updater activity
+
+[Timer]
+OnBootSec=5m
+OnUnitActiveSec=1h
+RandomizedDelaySec=5m
+Persistent=true
+Unit=claude-gatekeeper-doctor.service
+
+[Install]
+WantedBy=timers.target
