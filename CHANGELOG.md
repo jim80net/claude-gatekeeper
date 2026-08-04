@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.7.0](https://github.com/jim80net/gatekeeper-claude/compare/v1.6.0...v1.7.0) (2026-08-04)
+
+
+### Features
+
+* add authorization domains D1 shadow contracts ([#66](https://github.com/jim80net/gatekeeper-claude/issues/66)) ([a199fb9](https://github.com/jim80net/gatekeeper-claude/commit/a199fb96efbaedfce7ccc0336732e1f6138e3d23))
+* add scheduled Doctor version invariant ([#72](https://github.com/jim80net/gatekeeper-claude/issues/72)) ([668f42b](https://github.com/jim80net/gatekeeper-claude/commit/668f42b0d08c1c2029c352c6656aff477d89b680))
+
+
+### Bug Fixes
+
+* parse single-dash Doctor harness flags ([#71](https://github.com/jim80net/gatekeeper-claude/issues/71)) ([2c36e70](https://github.com/jim80net/gatekeeper-claude/commit/2c36e7008102b88b251bb31fd9a7892b7f70361f))
+* resolve bare Doctor commands through PATH ([#65](https://github.com/jim80net/gatekeeper-claude/issues/65)) ([6c0a9f5](https://github.com/jim80net/gatekeeper-claude/commit/6c0a9f5b05f3cd98579144cb8ca50655583e0aea))
+
 ## [1.6.0](https://github.com/jim80net/gatekeeper-claude/compare/v1.5.1...v1.6.0) (2026-07-25)
 
 
