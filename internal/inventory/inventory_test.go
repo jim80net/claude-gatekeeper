@@ -615,6 +615,30 @@ func TestCollectEffectiveClaudeRootContract(t *testing.T) {
 		}
 	})
 
+	t.Run("alternate registry cannot credit lexical prefix sibling", func(t *testing.T) {
+		home := t.TempDir()
+		alternate := filepath.Join(home, "alternate")
+		siblingPlugin := makePluginRoot(t, filepath.Join(home, "alternate-sibling"))
+		writeFile(t, filepath.Join(alternate, "settings.json"), `{"hooks":{}}`, 0644)
+		writeFile(t, filepath.Join(alternate, "plugins", "installed_plugins.json"), `{"plugins":{"claude-gatekeeper@market":[{"installPath":"`+siblingPlugin+`"}]}}`, 0644)
+		report, err := Collect(Options{Home: home, ClaudeRoot: alternate, RequiredHarness: "claude", MinSurfaces: 1})
+		if err != nil || report.OK || report.ClaudeRegistration.Status != "error" || len(report.ClaudeRegistration.Sources) != 0 || !report.HasFileErrors() || !strings.Contains(strings.Join(report.ClaudeRegistration.Errors, " "), "outside selected Claude root") {
+			t.Fatalf("report=%#v err=%v", report, err)
+		}
+	})
+
+	t.Run("alternate registry fails closed on unresolvable install ancestry", func(t *testing.T) {
+		home := t.TempDir()
+		alternate := filepath.Join(home, "alternate")
+		missingPlugin := filepath.Join(alternate, "plugins", "cache", "missing-gatekeeper")
+		writeFile(t, filepath.Join(alternate, "settings.json"), `{"hooks":{}}`, 0644)
+		writeFile(t, filepath.Join(alternate, "plugins", "installed_plugins.json"), `{"plugins":{"claude-gatekeeper@market":[{"installPath":"`+missingPlugin+`"}]}}`, 0644)
+		report, err := Collect(Options{Home: home, ClaudeRoot: alternate, RequiredHarness: "claude", MinSurfaces: 1})
+		if err != nil || report.OK || report.ClaudeRegistration.Status != "error" || len(report.ClaudeRegistration.Sources) != 0 || !report.HasFileErrors() || !strings.Contains(strings.Join(report.ClaudeRegistration.Errors, " "), "resolve install path symlinks") {
+			t.Fatalf("report=%#v err=%v", report, err)
+		}
+	})
+
 	t.Run("environment root plugin", func(t *testing.T) {
 		home := t.TempDir()
 		alternate := filepath.Join(home, "alternate")
