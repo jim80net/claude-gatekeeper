@@ -521,6 +521,145 @@ func TestCollectSurfaceOrderIsStableByCommand(t *testing.T) {
 	}
 }
 
+func TestCollectEffectiveClaudeRootContract(t *testing.T) {
+	probe := func(string) (string, error) { return "v", nil }
+	makeEmptyRoot := func(t *testing.T, root string) {
+		t.Helper()
+		writeFile(t, filepath.Join(root, "settings.json"), `{"hooks":{}}`, 0644)
+		writeFile(t, filepath.Join(root, "plugins", "installed_plugins.json"), `{"plugins":{}}`, 0644)
+	}
+	makeDirectRoot := func(t *testing.T, root, bin string) {
+		t.Helper()
+		writeFile(t, bin, "binary", 0755)
+		writeHook(t, filepath.Join(root, "settings.json"), bin)
+		writeFile(t, filepath.Join(root, "plugins", "installed_plugins.json"), `{"plugins":{}}`, 0644)
+	}
+	makePluginRoot := func(t *testing.T, root string) string {
+		t.Helper()
+		plugin := filepath.Join(root, "plugins", "cache", "market", "claude-gatekeeper", "v")
+		writeFile(t, filepath.Join(root, "settings.json"), `{"hooks":{}}`, 0644)
+		writeFile(t, filepath.Join(root, "plugins", "installed_plugins.json"), `{"plugins":{"claude-gatekeeper@market":[{"installPath":"`+plugin+`"}]}}`, 0644)
+		writeFile(t, filepath.Join(plugin, "hooks", "hooks.json"), `{"hooks":{"PreToolUse":[{"hooks":[{"command":"${CLAUDE_PLUGIN_ROOT}/bin/run.sh"}]}]}}`, 0644)
+		writeFile(t, filepath.Join(plugin, "bin", "claude-gatekeeper"), "binary", 0755)
+		return plugin
+	}
+
+	t.Run("default root plugin", func(t *testing.T) {
+		home := t.TempDir()
+		root := filepath.Join(home, ".claude")
+		plugin := makePluginRoot(t, root)
+		report, err := Collect(Options{Home: home, RequiredHarness: "claude", ExpectedVersion: "v", MinSurfaces: 1, VersionProbe: probe})
+		if err != nil || !report.OK || report.ClaudeRoot != root || report.ClaudeRootSource != "default" || report.ClaudeRegistration.Status != "registered" || len(report.ClaudeRegistration.Sources) != 1 || !strings.HasPrefix(report.ClaudeRegistration.Sources[0].Path, plugin) {
+			t.Fatalf("report=%#v err=%v", report, err)
+		}
+	})
+
+	t.Run("alternate root excludes default proof and globals cannot rescue", func(t *testing.T) {
+		home := t.TempDir()
+		makePluginRoot(t, filepath.Join(home, ".claude"))
+		t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(home, "environment-root"))
+		bin := filepath.Join(home, "claude-gatekeeper")
+		writeFile(t, bin, "binary", 0755)
+		writeHook(t, filepath.Join(home, ".codex", "hooks.json"), bin+" --harness codex")
+		writeHook(t, filepath.Join(home, ".grok", "hooks", "gatekeeper.json"), bin+" --harness grok")
+		alternate := filepath.Join(home, "alternate")
+		makeEmptyRoot(t, alternate)
+		report, err := Collect(Options{Home: home, ClaudeRoot: alternate, ClaudeRootSource: "cli", RequiredHarness: "claude", ExpectedVersion: "v", MinSurfaces: 1, VersionProbe: probe})
+		if err != nil || report.OK || report.ClaudeRoot != alternate || report.ClaudeRootSource != "cli" || report.ClaudeRegistration.Status != "absent" || len(report.Surfaces) != 2 {
+			t.Fatalf("report=%#v err=%v", report, err)
+		}
+		for _, surface := range report.Surfaces {
+			if surface.Scope != "host-global" || strings.HasPrefix(surface.ConfigPath, filepath.Join(home, ".claude")) {
+				t.Fatalf("default Claude proof leaked: %#v", surface)
+			}
+		}
+	})
+
+	t.Run("environment root plugin", func(t *testing.T) {
+		home := t.TempDir()
+		alternate := filepath.Join(home, "alternate")
+		makePluginRoot(t, alternate)
+		t.Setenv("CLAUDE_CONFIG_DIR", alternate)
+		report, err := Collect(Options{Home: home, RequiredHarness: "claude", ExpectedVersion: "v", MinSurfaces: 1, VersionProbe: probe})
+		if err != nil || !report.OK || report.ClaudeRoot != alternate || report.ClaudeRootSource != "environment" || report.ClaudeRegistration.Status != "registered" {
+			t.Fatalf("report=%#v err=%v", report, err)
+		}
+	})
+
+	t.Run("direct hook registration and output bounds", func(t *testing.T) {
+		home := t.TempDir()
+		root := filepath.Join(home, "alternate")
+		bin := filepath.Join(home, "claude-gatekeeper")
+		makeDirectRoot(t, root, bin)
+		report, err := Collect(Options{Home: home, ClaudeRoot: root, RequiredHarness: "claude", ExpectedBinary: bin, ExpectedVersion: "v", MinSurfaces: 1, VersionProbe: probe})
+		if err != nil || !report.OK || report.ClaudeRegistration.Status != "registered" || report.ClaudeRegistration.Sources[0].Kind != "claude-settings" || report.ClaudeRegistration.FiringStatus != "not_tested" {
+			t.Fatalf("report=%#v err=%v", report, err)
+		}
+		var table strings.Builder
+		if err := WriteTable(&table, report); err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{root, "CLAUDE REGISTRATION: REGISTERED", "FIRING: NOT_TESTED", "effective-claude-root", "claude-settings"} {
+			if !strings.Contains(table.String(), want) {
+				t.Errorf("table missing %q: %s", want, table.String())
+			}
+		}
+	})
+
+	t.Run("missing and malformed roots fail closed structurally", func(t *testing.T) {
+		home := t.TempDir()
+		for name, prepare := range map[string]func(string){
+			"missing root": func(string) {},
+			"missing registry": func(root string) {
+				writeFile(t, filepath.Join(root, "settings.json"), `{"hooks":{}}`, 0644)
+			},
+			"malformed settings": func(root string) {
+				writeFile(t, filepath.Join(root, "settings.json"), "{", 0644)
+				writeFile(t, filepath.Join(root, "plugins", "installed_plugins.json"), `{"plugins":{}}`, 0644)
+			},
+			"malformed registry": func(root string) {
+				writeFile(t, filepath.Join(root, "settings.json"), `{"hooks":{}}`, 0644)
+				writeFile(t, filepath.Join(root, "plugins", "installed_plugins.json"), "{", 0644)
+			},
+			"unreadable settings": func(root string) {
+				makeEmptyRoot(t, root)
+				if err := os.Remove(filepath.Join(root, "settings.json")); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Mkdir(filepath.Join(root, "settings.json"), 0755); err != nil {
+					t.Fatal(err)
+				}
+			},
+			"unreadable registry": func(root string) {
+				writeFile(t, filepath.Join(root, "settings.json"), `{"hooks":{}}`, 0644)
+				if err := os.MkdirAll(filepath.Join(root, "plugins", "installed_plugins.json"), 0755); err != nil {
+					t.Fatal(err)
+				}
+			},
+		} {
+			t.Run(name, func(t *testing.T) {
+				root := filepath.Join(home, name)
+				prepare(root)
+				report, err := Collect(Options{Home: home, ClaudeRoot: root, RequiredHarness: "claude", MinSurfaces: 1, VersionProbe: probe})
+				if err != nil || report.OK || report.ClaudeRegistration.Status != "error" || !report.HasFileErrors() || len(report.ClaudeRegistration.Errors) == 0 {
+					t.Fatalf("report=%#v err=%v", report, err)
+				}
+			})
+		}
+	})
+
+	t.Run("explicit non Claude target remains compatible", func(t *testing.T) {
+		home := t.TempDir()
+		bin := filepath.Join(home, "claude-gatekeeper")
+		writeFile(t, bin, "binary", 0755)
+		writeHook(t, filepath.Join(home, ".grok", "hooks", "gatekeeper.json"), bin+" --harness grok")
+		report, err := Collect(Options{Home: home, RequiredHarness: "grok", ExpectedBinary: bin, ExpectedVersion: "v", MinSurfaces: 1, VersionProbe: probe})
+		if err != nil || !report.OK || report.RequiredHarness != "grok" {
+			t.Fatalf("report=%#v err=%v", report, err)
+		}
+	})
+}
+
 func writeHook(t *testing.T, path, command string) {
 	t.Helper()
 	data, _ := json.Marshal(map[string]any{"hooks": map[string]any{"PreToolUse": []any{map[string]any{"hooks": []any{map[string]any{"type": "command", "command": command}}}}}})

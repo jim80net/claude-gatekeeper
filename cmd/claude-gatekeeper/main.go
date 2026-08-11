@@ -262,6 +262,8 @@ func runDoctor(stdout io.Writer, args []string) int {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	jsonOutput := fs.Bool("json", false, "Emit machine-readable JSON")
+	claudeConfigDir := fs.String("claude-config-dir", "", "Effective Claude config root (default: CLAUDE_CONFIG_DIR, then ~/.claude)")
+	requireHarness := fs.String("require-harness", "claude", "Registration required for success: claude, codex, grok, or any")
 	expectedBinary := fs.String("expected-binary", "", "Expected binary path (default: this executable)")
 	expectedVersion := fs.String("expected-version", version, "Expected version stamp")
 	minSurfaces := fs.Int("min-surfaces", 1, "Minimum recognized surfaces required for success")
@@ -282,7 +284,10 @@ func runDoctor(stdout io.Writer, args []string) int {
 			*expectedBinary = exe
 		}
 	}
-	options := inventory.Options{ExpectedBinary: *expectedBinary, ExpectedVersion: *expectedVersion, MinSurfaces: *minSurfaces}
+	options := inventory.Options{ClaudeRoot: *claudeConfigDir, RequiredHarness: *requireHarness, ExpectedBinary: *expectedBinary, ExpectedVersion: *expectedVersion, MinSurfaces: *minSurfaces}
+	if *claudeConfigDir != "" {
+		options.ClaudeRootSource = "cli"
+	}
 	if *checkLatest {
 		options.PublishedVersionProbe = func() (string, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -238,7 +238,7 @@ func TestRunDoctorJSON(t *testing.T) {
 	}
 
 	var stdout bytes.Buffer
-	code := run(strings.NewReader(""), &stdout, []string{"doctor", "--json", "--expected-binary", bin, "--expected-version", "test-version"})
+	code := run(strings.NewReader(""), &stdout, []string{"doctor", "--json", "--require-harness", "grok", "--expected-binary", bin, "--expected-version", "test-version"})
 	if code != 0 {
 		t.Fatalf("exit code = %d, output = %s", code, stdout.String())
 	}
@@ -256,11 +256,54 @@ func TestRunDoctorJSON(t *testing.T) {
 	}
 }
 
+func TestRunDoctorAlternateClaudeRootCannotUseDefaultPluginOrGlobals(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	alternate := filepath.Join(home, "alternate")
+	t.Setenv("CLAUDE_CONFIG_DIR", alternate)
+	for path, content := range map[string]string{
+		filepath.Join(alternate, "settings.json"):                           `{"hooks":{}}`,
+		filepath.Join(alternate, "plugins", "installed_plugins.json"):       `{"plugins":{}}`,
+		filepath.Join(home, ".claude", "settings.json"):                     `{"hooks":{}}`,
+		filepath.Join(home, ".claude", "plugins", "installed_plugins.json"): `{"plugins":{"claude-gatekeeper@market":[{"installPath":"` + filepath.Join(home, ".claude", "plugins", "cache", "claude-gatekeeper") + `"}]}}`,
+		filepath.Join(home, ".codex", "hooks.json"):                         `{"hooks":{"PreToolUse":[{"hooks":[{"command":"claude-gatekeeper --harness codex"}]}]}}`,
+		filepath.Join(home, ".grok", "hooks", "gatekeeper.json"):            `{"hooks":{"PreToolUse":[{"hooks":[{"command":"claude-gatekeeper --harness grok"}]}]}}`,
+	} {
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pluginHook := filepath.Join(home, ".claude", "plugins", "cache", "claude-gatekeeper", "hooks", "hooks.json")
+	if err := os.MkdirAll(filepath.Dir(pluginHook), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pluginHook, []byte(`{"hooks":{"PreToolUse":[{"hooks":[{"command":"${CLAUDE_PLUGIN_ROOT}/bin/run.sh"}]}]}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout bytes.Buffer
+	code := run(strings.NewReader(""), &stdout, []string{"doctor", "--json"})
+	if code != 1 {
+		t.Fatalf("exit code=%d, want 1: %s", code, stdout.String())
+	}
+	for _, want := range []string{`"claude_root": "` + alternate + `"`, `"claude_root_source": "environment"`, `"status": "absent"`, `"firing_status": "not_tested"`, `"scope": "host-global"`} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("output missing %s: %s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), filepath.Join(home, ".claude", "plugins", "cache")) {
+		t.Fatalf("default plugin was used as selected-root evidence: %s", stdout.String())
+	}
+}
+
 func TestRunDoctorFailureExitCodes(t *testing.T) {
 	t.Run("minimum surfaces", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
 		var stdout bytes.Buffer
-		if code := run(strings.NewReader(""), &stdout, []string{"doctor", "--json"}); code != 1 {
+		if code := run(strings.NewReader(""), &stdout, []string{"doctor", "--json", "--require-harness", "any"}); code != 1 {
 			t.Fatalf("exit code = %d, want 1; output = %s", code, stdout.String())
 		}
 	})
@@ -280,6 +323,13 @@ func TestRunDoctorFailureExitCodes(t *testing.T) {
 		}
 		config := `{"hooks":{"PreToolUse":[{"hooks":[{"command":"` + bin + `"}]}]}}`
 		if err := os.WriteFile(hookPath, []byte(config), 0644); err != nil {
+			t.Fatal(err)
+		}
+		registry := filepath.Join(home, ".claude", "plugins", "installed_plugins.json")
+		if err := os.MkdirAll(filepath.Dir(registry), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(registry, []byte(`{"plugins":{}}`), 0644); err != nil {
 			t.Fatal(err)
 		}
 		code := run(strings.NewReader(""), &bytes.Buffer{}, []string{"doctor", "--expected-binary", bin, "--expected-version", "wanted"})
@@ -346,6 +396,13 @@ func TestRunDoctorJSONChecksPublishedLatest(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(settings, []byte(`{"hooks":{"PreToolUse":[{"hooks":[{"command":"`+bin+`"}]}]}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	registry := filepath.Join(home, ".claude", "plugins", "installed_plugins.json")
+	if err := os.MkdirAll(filepath.Dir(registry), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(registry, []byte(`{"plugins":{}}`), 0644); err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

@@ -24,6 +24,9 @@ const binaryName = "claude-gatekeeper"
 // Options controls hook discovery and drift expectations.
 type Options struct {
 	Home                  string
+	ClaudeRoot            string
+	ClaudeRootSource      string
+	RequiredHarness       string
 	ExpectedBinary        string
 	ExpectedVersion       string
 	MinSurfaces           int
@@ -34,14 +37,33 @@ type Options struct {
 
 // Report is the machine-readable result of a hook inventory.
 type Report struct {
-	OK               bool              `json:"ok"`
-	ExpectedBinary   string            `json:"expected_binary"`
-	ExpectedVersion  string            `json:"expected_version"`
-	MinSurfaces      int               `json:"min_surfaces"`
-	Warnings         []string          `json:"warnings"`
-	Files            []FileSummary     `json:"files"`
-	Surfaces         []Surface         `json:"surfaces"`
-	VersionInvariant *VersionInvariant `json:"version_invariant,omitempty"`
+	OK                 bool              `json:"ok"`
+	ClaudeRoot         string            `json:"claude_root"`
+	ClaudeRootSource   string            `json:"claude_root_source"`
+	RequiredHarness    string            `json:"required_harness"`
+	ClaudeRegistration Registration      `json:"claude_registration"`
+	ExpectedBinary     string            `json:"expected_binary"`
+	ExpectedVersion    string            `json:"expected_version"`
+	MinSurfaces        int               `json:"min_surfaces"`
+	Warnings           []string          `json:"warnings"`
+	Files              []FileSummary     `json:"files"`
+	Surfaces           []Surface         `json:"surfaces"`
+	VersionInvariant   *VersionInvariant `json:"version_invariant,omitempty"`
+}
+
+// Registration separates static registration evidence from a live firing
+// control. Doctor never claims interception from configuration inspection.
+type Registration struct {
+	Status       string               `json:"status"`
+	Sources      []RegistrationSource `json:"sources"`
+	FiringStatus string               `json:"firing_status"`
+	FiringReason string               `json:"firing_reason"`
+	Errors       []string             `json:"errors"`
+}
+
+type RegistrationSource struct {
+	Kind string `json:"kind"`
+	Path string `json:"path"`
 }
 
 // VersionInvariant compares versions reported by enforcing binaries with the
@@ -67,6 +89,9 @@ type VersionObservation struct {
 // FileSummary reports discovery coverage for one existing hook file.
 type FileSummary struct {
 	Path         string   `json:"path"`
+	Scope        string   `json:"scope"`
+	ConfigRoot   string   `json:"config_root"`
+	Harness      string   `json:"harness"`
 	CommandsSeen int      `json:"commands_seen"`
 	Recognized   int      `json:"commands_recognized"`
 	Unrecognized []string `json:"unrecognized_commands"`
@@ -77,6 +102,8 @@ type FileSummary struct {
 // Surface describes one recognized live gatekeeper command and its drift.
 type Surface struct {
 	Kind            string   `json:"surface"`
+	Scope           string   `json:"scope"`
+	ConfigRoot      string   `json:"config_root"`
 	ConfigPath      string   `json:"config_path"`
 	Command         string   `json:"command"`
 	BinaryPath      string   `json:"binary_path"`
@@ -88,7 +115,7 @@ type Surface struct {
 }
 
 type candidate struct {
-	kind, path, expectedHarness, pluginRoot string
+	kind, path, expectedHarness, pluginRoot, scope, configRoot string
 }
 
 // Collect inventories known live user-level hook surfaces and evaluates drift.
@@ -106,27 +133,74 @@ func Collect(opts Options) (Report, error) {
 	if opts.LookPath == nil {
 		opts.LookPath = exec.LookPath
 	}
+	claudeRoot, claudeRootSource := resolveClaudeRoot(opts)
+	requiredHarness := opts.RequiredHarness
+	if requiredHarness == "" {
+		requiredHarness = "any"
+	}
+	if !validRequiredHarness(requiredHarness) {
+		return Report{}, fmt.Errorf("invalid required harness %q", requiredHarness)
+	}
 	report := Report{
-		OK: true, ExpectedBinary: cleanPath(opts.ExpectedBinary), ExpectedVersion: opts.ExpectedVersion,
+		OK: true, ClaudeRoot: claudeRoot, ClaudeRootSource: claudeRootSource, RequiredHarness: requiredHarness,
+		ClaudeRegistration: Registration{Status: "absent", Sources: []RegistrationSource{}, FiringStatus: "not_tested", FiringReason: "static Doctor inventory does not execute a known-positive firing control", Errors: []string{}},
+		ExpectedBinary:     cleanPath(opts.ExpectedBinary), ExpectedVersion: opts.ExpectedVersion,
 		MinSurfaces: opts.MinSurfaces, Warnings: []string{}, Files: []FileSummary{}, Surfaces: []Surface{},
 	}
 	candidates := []candidate{
-		{"grok-global", filepath.Join(opts.Home, ".grok", "hooks", "gatekeeper.json"), "grok", ""},
-		{"codex-global", filepath.Join(opts.Home, ".codex", "hooks.json"), "codex", ""},
+		{"grok-global", filepath.Join(opts.Home, ".grok", "hooks", "gatekeeper.json"), "grok", "", "host-global", opts.Home},
+		{"codex-global", filepath.Join(opts.Home, ".codex", "hooks.json"), "codex", "", "host-global", opts.Home},
 	}
-	settingsPaths, err := filepath.Glob(filepath.Join(opts.Home, ".claude", "settings*.json"))
+	strictClaude := requiredHarness == "claude"
+	if info, statErr := os.Stat(claudeRoot); statErr != nil || !info.IsDir() {
+		message := fmt.Sprintf("selected Claude root unavailable: %v", statErr)
+		if statErr == nil {
+			message = "selected Claude root is not a directory"
+		}
+		report.ClaudeRegistration.Status = "error"
+		report.ClaudeRegistration.Errors = append(report.ClaudeRegistration.Errors, message)
+		if strictClaude {
+			report.Files = append(report.Files, FileSummary{Path: claudeRoot, Scope: "effective-claude-root", ConfigRoot: claudeRoot, Harness: "claude", Unrecognized: []string{}, Warnings: []string{}, Error: message})
+			report.OK = false
+		}
+	}
+	settingsPaths, err := filepath.Glob(filepath.Join(claudeRoot, "settings*.json"))
 	if err != nil {
 		return Report{}, fmt.Errorf("find Claude settings: %w", err)
 	}
-	for _, path := range settingsPaths {
-		candidates = append(candidates, candidate{"claude-settings", path, "claude", ""})
+	if len(settingsPaths) == 0 && strictClaude && report.ClaudeRegistration.Status != "error" {
+		message := "no settings*.json found under selected Claude root"
+		report.ClaudeRegistration.Status = "error"
+		report.ClaudeRegistration.Errors = append(report.ClaudeRegistration.Errors, message)
+		report.Files = append(report.Files, FileSummary{Path: filepath.Join(claudeRoot, "settings*.json"), Scope: "effective-claude-root", ConfigRoot: claudeRoot, Harness: "claude", Unrecognized: []string{}, Warnings: []string{}, Error: message})
+		report.OK = false
 	}
-	pluginRoots, err := installedPluginRoots(opts.Home)
+	for _, path := range settingsPaths {
+		candidates = append(candidates, candidate{"claude-settings", path, "claude", "", "effective-claude-root", claudeRoot})
+	}
+	pluginRoots, registryPath, registryExists, err := installedPluginRoots(claudeRoot)
 	if err != nil {
-		return Report{}, err
+		report.ClaudeRegistration.Status = "error"
+		report.ClaudeRegistration.Errors = append(report.ClaudeRegistration.Errors, err.Error())
+		if strictClaude {
+			report.Files = append(report.Files, FileSummary{Path: registryPath, Scope: "effective-claude-root", ConfigRoot: claudeRoot, Harness: "claude", Unrecognized: []string{}, Warnings: []string{}, Error: err.Error()})
+			report.OK = false
+		} else if requiredHarness == "any" {
+			return Report{}, err
+		}
+	} else if !registryExists && strictClaude {
+		message := fmt.Sprintf("selected-root plugin registry is missing: %s", registryPath)
+		report.ClaudeRegistration.Status = "error"
+		report.ClaudeRegistration.Errors = append(report.ClaudeRegistration.Errors, message)
+		report.Files = append(report.Files, FileSummary{Path: registryPath, Scope: "effective-claude-root", ConfigRoot: claudeRoot, Harness: "claude", Unrecognized: []string{}, Warnings: []string{}, Error: message})
+		report.OK = false
+	} else if !registryExists {
+		message := fmt.Sprintf("selected-root plugin registry is missing: %s", registryPath)
+		report.ClaudeRegistration.Status = "error"
+		report.ClaudeRegistration.Errors = append(report.ClaudeRegistration.Errors, message)
 	}
 	for _, root := range pluginRoots {
-		candidates = append(candidates, candidate{"claude-plugin", filepath.Join(root, "hooks", "hooks.json"), "claude", root})
+		candidates = append(candidates, candidate{"claude-plugin", filepath.Join(root, "hooks", "hooks.json"), "claude", root, "effective-claude-root", claudeRoot})
 	}
 
 	seen := map[string]bool{}
@@ -136,19 +210,30 @@ func Collect(opts Options) (Report, error) {
 			continue
 		}
 		if err != nil {
-			report.OK = false
+			if candidateRequired(c, requiredHarness) {
+				report.OK = false
+			}
+			if c.expectedHarness == "claude" {
+				report.ClaudeRegistration.Status = "error"
+				report.ClaudeRegistration.Errors = append(report.ClaudeRegistration.Errors, fmt.Sprintf("%s: %v", c.path, err))
+			}
 			report.Files = append(report.Files, FileSummary{
 				Path:         c.path,
+				Scope:        c.scope,
+				ConfigRoot:   c.configRoot,
+				Harness:      c.expectedHarness,
 				Unrecognized: []string{},
 				Warnings:     []string{},
 				Error:        err.Error(),
 			})
 			continue
 		}
-		summary := FileSummary{Path: c.path, Unrecognized: []string{}, Warnings: append([]string{}, shapeWarnings...)}
+		summary := FileSummary{Path: c.path, Scope: c.scope, ConfigRoot: c.configRoot, Harness: c.expectedHarness, Unrecognized: []string{}, Warnings: append([]string{}, shapeWarnings...)}
 		summary.CommandsSeen = len(commands)
 		if len(shapeWarnings) > 0 {
-			report.OK = false
+			if candidateRequired(c, requiredHarness) {
+				report.OK = false
+			}
 		}
 		for _, command := range commands {
 			parsed, parseErr := parseCommand(command)
@@ -156,7 +241,9 @@ func Collect(opts Options) (Report, error) {
 			if parseErr != nil || harnessErr != nil || (!referencesGatekeeper(parsed) && !(c.pluginRoot != "" && isPluginWrapper(parsed, c.pluginRoot))) {
 				summary.Unrecognized = append(summary.Unrecognized, command)
 				if looksLikeGatekeeper(command) {
-					report.OK = false
+					if candidateRequired(c, requiredHarness) {
+						report.OK = false
+					}
 					warning := fmt.Sprintf("%s: unrecognized gatekeeper command %q", c.path, command)
 					summary.Warnings = append(summary.Warnings, warning)
 				}
@@ -169,16 +256,33 @@ func Collect(opts Options) (Report, error) {
 			}
 			seen[key] = true
 			s := inspect(c, command, parsed, harness, opts)
-			if len(s.Drift) > 0 {
+			if len(s.Drift) > 0 && candidateRequired(c, requiredHarness) {
 				report.OK = false
 			}
 			report.Surfaces = append(report.Surfaces, s)
 		}
 		report.Files = append(report.Files, summary)
 	}
-	if len(report.Surfaces) < opts.MinSurfaces {
+	for _, surface := range report.Surfaces {
+		if surface.Scope == "effective-claude-root" && surface.Harness == "claude" {
+			report.ClaudeRegistration.Sources = append(report.ClaudeRegistration.Sources, RegistrationSource{Kind: surface.Kind, Path: surface.ConfigPath})
+		}
+	}
+	if report.ClaudeRegistration.Status != "error" {
+		if len(report.ClaudeRegistration.Sources) > 0 {
+			report.ClaudeRegistration.Status = "registered"
+		} else {
+			report.ClaudeRegistration.Status = "absent"
+		}
+	}
+	matchingSurfaces := requiredSurfaceCount(report.Surfaces, requiredHarness)
+	if matchingSurfaces < opts.MinSurfaces {
 		report.OK = false
-		report.Warnings = append(report.Warnings, fmt.Sprintf("only %d gatekeeper surfaces found; minimum is %d", len(report.Surfaces), opts.MinSurfaces))
+		report.Warnings = append(report.Warnings, fmt.Sprintf("only %d %s gatekeeper surfaces found; minimum is %d", matchingSurfaces, requiredHarness, opts.MinSurfaces))
+	}
+	if requiredHarness == "claude" && report.ClaudeRegistration.Status != "registered" {
+		report.OK = false
+		report.Warnings = append(report.Warnings, fmt.Sprintf("effective Claude registration is %s at %s", report.ClaudeRegistration.Status, claudeRoot))
 	}
 	sort.SliceStable(report.Surfaces, func(i, j int) bool {
 		left, right := report.Surfaces[i], report.Surfaces[j]
@@ -192,7 +296,7 @@ func Collect(opts Options) (Report, error) {
 	})
 	sort.Slice(report.Files, func(i, j int) bool { return report.Files[i].Path < report.Files[j].Path })
 	if opts.PublishedVersionProbe != nil {
-		report.VersionInvariant = evaluateVersionInvariant(report.Surfaces, opts.PublishedVersionProbe)
+		report.VersionInvariant = evaluateVersionInvariant(requiredSurfaces(report.Surfaces, requiredHarness), opts.PublishedVersionProbe)
 		if report.VersionInvariant.Status != "current" {
 			report.OK = false
 		}
@@ -315,14 +419,14 @@ func (r Report) HasFileErrors() bool {
 
 // installedPluginRoots reads Claude Code's live-install registry. Cached older
 // versions and plugins other than claude-gatekeeper are deliberately excluded.
-func installedPluginRoots(home string) ([]string, error) {
-	path := filepath.Join(home, ".claude", "plugins", "installed_plugins.json")
+func installedPluginRoots(claudeRoot string) ([]string, string, bool, error) {
+	path := filepath.Join(claudeRoot, "plugins", "installed_plugins.json")
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return nil, nil
+		return nil, path, false, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
+		return nil, path, true, fmt.Errorf("read %s: %w", path, err)
 	}
 	var registry struct {
 		Plugins map[string][]struct {
@@ -330,7 +434,7 @@ func installedPluginRoots(home string) ([]string, error) {
 		} `json:"plugins"`
 	}
 	if err := json.Unmarshal(data, &registry); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		return nil, path, true, fmt.Errorf("parse %s: %w", path, err)
 	}
 	var roots []string
 	for name, installs := range registry.Plugins {
@@ -343,7 +447,46 @@ func installedPluginRoots(home string) ([]string, error) {
 			}
 		}
 	}
-	return roots, nil
+	return roots, path, true, nil
+}
+
+func resolveClaudeRoot(opts Options) (string, string) {
+	if opts.ClaudeRoot != "" {
+		source := opts.ClaudeRootSource
+		if source == "" {
+			source = "explicit"
+		}
+		return cleanPath(opts.ClaudeRoot), source
+	}
+	if root := os.Getenv("CLAUDE_CONFIG_DIR"); root != "" {
+		return cleanPath(root), "environment"
+	}
+	return filepath.Join(opts.Home, ".claude"), "default"
+}
+
+func validRequiredHarness(value string) bool {
+	return value == "any" || value == "claude" || value == "codex" || value == "grok"
+}
+
+func candidateRequired(c candidate, required string) bool {
+	return required == "any" || c.expectedHarness == required
+}
+
+func requiredSurfaces(surfaces []Surface, required string) []Surface {
+	if required == "any" {
+		return surfaces
+	}
+	filtered := make([]Surface, 0, len(surfaces))
+	for _, surface := range surfaces {
+		if surface.Harness == required {
+			filtered = append(filtered, surface)
+		}
+	}
+	return filtered
+}
+
+func requiredSurfaceCount(surfaces []Surface, required string) int {
+	return len(requiredSurfaces(surfaces, required))
 }
 
 type parsedCommand struct {
@@ -474,7 +617,7 @@ func inspect(c candidate, command string, parsed parsedCommand, harness string, 
 	if c.pluginRoot != "" {
 		expectedBinary = filepath.Join(c.pluginRoot, "bin", binaryName)
 	}
-	s := Surface{Kind: c.kind, ConfigPath: c.path, Command: command, BinaryPath: cleanPath(binary), Harness: harness, ExpectedBinary: expectedBinary, ExpectedHarness: c.expectedHarness, Drift: []string{}}
+	s := Surface{Kind: c.kind, Scope: c.scope, ConfigRoot: c.configRoot, ConfigPath: c.path, Command: command, BinaryPath: cleanPath(binary), Harness: harness, ExpectedBinary: expectedBinary, ExpectedHarness: c.expectedHarness, Drift: []string{}}
 	if s.Harness != c.expectedHarness {
 		s.Drift = append(s.Drift, fmt.Sprintf("harness: expected %s, got %s", c.expectedHarness, s.Harness))
 	}
@@ -642,9 +785,36 @@ func WriteJSON(w io.Writer, report Report) error {
 
 // WriteTable writes the human-readable surface and per-file coverage tables.
 func WriteTable(w io.Writer, report Report) error {
+	if _, err := fmt.Fprintf(w, "CLAUDE ROOT: %s (source: %s)\n", emptyDash(report.ClaudeRoot), emptyDash(report.ClaudeRootSource)); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "REQUIREMENT: %s\n", strings.ToUpper(emptyDash(report.RequiredHarness))); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "CLAUDE REGISTRATION: %s; FIRING: %s", strings.ToUpper(emptyDash(report.ClaudeRegistration.Status)), strings.ToUpper(emptyDash(report.ClaudeRegistration.FiringStatus))); err != nil {
+		return err
+	}
+	if report.ClaudeRegistration.FiringReason != "" {
+		if _, err := fmt.Fprintf(w, " — %s", report.ClaudeRegistration.FiringReason); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	for _, source := range report.ClaudeRegistration.Sources {
+		if _, err := fmt.Fprintf(w, "CLAUDE REGISTRATION SOURCE: %s %s\n", source.Kind, source.Path); err != nil {
+			return err
+		}
+	}
+	for _, diagnosticErr := range report.ClaudeRegistration.Errors {
+		if _, err := fmt.Fprintf(w, "CLAUDE REGISTRATION ERROR: %s\n", diagnosticErr); err != nil {
+			return err
+		}
+	}
 	if len(report.Surfaces) > 0 {
 		tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-		if _, err := fmt.Fprintln(tw, "SURFACE\tCONFIG\tHARNESS\tVERSION\tBINARY\tDRIFT"); err != nil {
+		if _, err := fmt.Fprintln(tw, "SURFACE\tSCOPE\tROOT\tCONFIG\tHARNESS\tVERSION\tBINARY\tDRIFT"); err != nil {
 			return err
 		}
 		for _, s := range report.Surfaces {
@@ -652,7 +822,7 @@ func WriteTable(w io.Writer, report Report) error {
 			if len(s.Drift) > 0 {
 				drift = strings.Join(s.Drift, "; ")
 			}
-			if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", s.Kind, s.ConfigPath, s.Harness, emptyDash(s.Version), s.BinaryPath, drift); err != nil {
+			if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", s.Kind, s.Scope, s.ConfigRoot, s.ConfigPath, s.Harness, emptyDash(s.Version), s.BinaryPath, drift); err != nil {
 				return err
 			}
 		}
@@ -665,7 +835,7 @@ func WriteTable(w io.Writer, report Report) error {
 			return err
 		}
 		tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-		if _, err := fmt.Fprintln(tw, "HOOK FILE\tCOMMANDS\tRECOGNIZED\tWARNINGS"); err != nil {
+		if _, err := fmt.Fprintln(tw, "HOOK FILE\tSCOPE\tROOT\tHARNESS\tCOMMANDS\tRECOGNIZED\tWARNINGS"); err != nil {
 			return err
 		}
 		for _, file := range report.Files {
@@ -676,7 +846,7 @@ func WriteTable(w io.Writer, report Report) error {
 			if len(file.Unrecognized) > 0 {
 				warnings = append(warnings, "unrecognized: "+strings.Join(file.Unrecognized, " | "))
 			}
-			if _, err := fmt.Fprintf(tw, "%s\t%d\t%d\t%s\n", file.Path, file.CommandsSeen, file.Recognized, emptyDash(strings.Join(warnings, "; "))); err != nil {
+			if _, err := fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%d\t%s\n", file.Path, file.Scope, file.ConfigRoot, file.Harness, file.CommandsSeen, file.Recognized, emptyDash(strings.Join(warnings, "; "))); err != nil {
 				return err
 			}
 		}

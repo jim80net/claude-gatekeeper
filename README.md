@@ -62,11 +62,23 @@ claude-gatekeeper doctor --expected-binary ~/go/bin/claude-gatekeeper
 claude-gatekeeper doctor --expected-version 1.3.1
 claude-gatekeeper doctor --min-surfaces 3
 claude-gatekeeper doctor --json --check-latest --min-surfaces 3
+CLAUDE_CONFIG_DIR=/path/to/claude-config claude-gatekeeper doctor --json
+claude-gatekeeper doctor --claude-config-dir /path/to/claude-config --json
+claude-gatekeeper doctor --require-harness codex
 ```
 
-It inventories live references in `~/.grok/hooks/gatekeeper.json`,
-`~/.codex/hooks.json`, Claude settings files, and installed Claude plugin hook
-manifests. For each surface it reports the configured or wrapper-resolved binary,
+By default Doctor requires Claude registration at the effective Claude root. The
+root is selected in this order: `--claude-config-dir`, `CLAUDE_CONFIG_DIR`, then
+`~/.claude`. Once selected, Doctor reads Claude settings and the plugin registry
+only from that root; it never merges or falls back to the default root. Missing,
+unreadable, or malformed selected-root inputs fail closed. Use
+`--require-harness codex`, `--require-harness grok`, or `--require-harness any`
+for a deliberately different diagnostic requirement.
+
+It also inventories host-global references in `~/.grok/hooks/gatekeeper.json`
+and `~/.codex/hooks.json`. Those observations are scope-labelled and cannot
+satisfy a targeted Claude requirement. For each surface it reports the
+configured or wrapper-resolved binary,
 the result of `claude-gatekeeper --version`, the selected harness, and drift from
 the running command's expected binary/version and the surface's required harness.
 For the global Codex surface, it also recomputes the current trust hash and
@@ -75,10 +87,17 @@ that installed hook silently.
 Plugin `bin/run.sh` entries resolve to the plugin's adjacent
 `bin/claude-gatekeeper`; the doctor never executes the download/build wrapper.
 
-Exit status is 0 when all discovered surfaces match, 1 when drift is found, and
+Doctor reports static registration separately from live firing. Static success
+proves configuration/registration only; firing remains `not_tested` unless a
+separate known-positive control is executed outside Doctor.
+
+Exit status is 0 when all required surfaces match, 1 when drift or required
+registration absence is found, and
 2 when inventory or output fails. JSON output is intended for fleet automation
-and contains `ok`, `expected_binary`, `expected_version`, `min_surfaces`,
-`warnings`, `files`, and `surfaces` fields. With `--check-latest`, it also
+and contains the selected Claude root and source, requirement, Claude
+registration/firing state, `expected_binary`, `expected_version`, `min_surfaces`,
+`warnings`, scope-labelled `files`, and scope-labelled `surfaces`. With
+`--check-latest`, it also
 contains a `version_invariant` built from executable-reported surface versions
 and the latest published release. `fail` and `unknown` both exit nonzero; the
 published source or an executable probe can never fail into `OK`. See
