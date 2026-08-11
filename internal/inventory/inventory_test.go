@@ -575,6 +575,46 @@ func TestCollectEffectiveClaudeRootContract(t *testing.T) {
 		}
 	})
 
+	t.Run("alternate registry cannot credit plugin outside selected root", func(t *testing.T) {
+		home := t.TempDir()
+		defaultRoot := filepath.Join(home, ".claude")
+		defaultPlugin := makePluginRoot(t, defaultRoot)
+		alternate := filepath.Join(home, "alternate")
+		writeFile(t, filepath.Join(alternate, "settings.json"), `{"hooks":{}}`, 0644)
+		writeFile(t, filepath.Join(alternate, "plugins", "installed_plugins.json"), `{"plugins":{"claude-gatekeeper@market":[{"installPath":"`+defaultPlugin+`"}]}}`, 0644)
+		report, err := Collect(Options{Home: home, ClaudeRoot: alternate, RequiredHarness: "claude", ExpectedVersion: "v", MinSurfaces: 1, VersionProbe: probe})
+		if err != nil || report.OK || report.ClaudeRegistration.Status != "error" || len(report.ClaudeRegistration.Sources) != 0 || !report.HasFileErrors() {
+			t.Fatalf("report=%#v err=%v", report, err)
+		}
+		if len(report.ClaudeRegistration.Errors) != 1 || !strings.Contains(report.ClaudeRegistration.Errors[0], "outside selected Claude root") {
+			t.Fatalf("registration errors=%#v", report.ClaudeRegistration.Errors)
+		}
+		for _, surface := range report.Surfaces {
+			if surface.Scope == "effective-claude-root" {
+				t.Fatalf("outside plugin became effective evidence: %#v", surface)
+			}
+		}
+	})
+
+	t.Run("alternate registry cannot escape selected root through symlink", func(t *testing.T) {
+		home := t.TempDir()
+		defaultPlugin := makePluginRoot(t, filepath.Join(home, ".claude"))
+		alternate := filepath.Join(home, "alternate")
+		linkedPlugin := filepath.Join(alternate, "plugins", "cache", "linked-gatekeeper")
+		if err := os.MkdirAll(filepath.Dir(linkedPlugin), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(defaultPlugin, linkedPlugin); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(alternate, "settings.json"), `{"hooks":{}}`, 0644)
+		writeFile(t, filepath.Join(alternate, "plugins", "installed_plugins.json"), `{"plugins":{"claude-gatekeeper@market":[{"installPath":"`+linkedPlugin+`"}]}}`, 0644)
+		report, err := Collect(Options{Home: home, ClaudeRoot: alternate, RequiredHarness: "claude", MinSurfaces: 1})
+		if err != nil || report.OK || report.ClaudeRegistration.Status != "error" || len(report.ClaudeRegistration.Sources) != 0 || !report.HasFileErrors() || !strings.Contains(strings.Join(report.ClaudeRegistration.Errors, " "), "outside selected Claude root") {
+			t.Fatalf("report=%#v err=%v", report, err)
+		}
+	})
+
 	t.Run("environment root plugin", func(t *testing.T) {
 		home := t.TempDir()
 		alternate := filepath.Join(home, "alternate")

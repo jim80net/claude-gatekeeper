@@ -297,6 +297,17 @@ func TestRunDoctorAlternateClaudeRootCannotUseDefaultPluginOrGlobals(t *testing.
 	if strings.Contains(stdout.String(), filepath.Join(home, ".claude", "plugins", "cache")) {
 		t.Fatalf("default plugin was used as selected-root evidence: %s", stdout.String())
 	}
+
+	outsidePlugin := filepath.Join(home, ".claude", "plugins", "cache", "claude-gatekeeper")
+	registry := filepath.Join(alternate, "plugins", "installed_plugins.json")
+	if err := os.WriteFile(registry, []byte(`{"plugins":{"claude-gatekeeper@market":[{"installPath":"`+outsidePlugin+`"}]}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	code = run(strings.NewReader(""), &stdout, []string{"doctor", "--json"})
+	if code != 2 || !strings.Contains(stdout.String(), "outside selected Claude root") || !strings.Contains(stdout.String(), `"status": "error"`) || !strings.Contains(stdout.String(), `"sources": []`) {
+		t.Fatalf("cross-root registry control code=%d: %s", code, stdout.String())
+	}
 }
 
 func TestRunDoctorFailureExitCodes(t *testing.T) {

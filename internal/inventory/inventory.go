@@ -443,11 +443,41 @@ func installedPluginRoots(claudeRoot string) ([]string, string, bool, error) {
 		}
 		for _, install := range installs {
 			if install.InstallPath != "" {
-				roots = append(roots, cleanPath(install.InstallPath))
+				root := cleanPath(install.InstallPath)
+				if err := requirePathWithinRoot(claudeRoot, root); err != nil {
+					return nil, path, true, fmt.Errorf("validate Gatekeeper installPath %q from %s: %w", install.InstallPath, path, err)
+				}
+				roots = append(roots, root)
 			}
 		}
 	}
 	return roots, path, true, nil
+}
+
+func requirePathWithinRoot(root, path string) error {
+	if !filepath.IsAbs(path) {
+		return errors.New("path is not absolute")
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return fmt.Errorf("resolve selected root: %w", err)
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(rootAbs)
+	if err != nil {
+		return fmt.Errorf("resolve selected root symlinks: %w", err)
+	}
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return fmt.Errorf("resolve install path symlinks: %w", err)
+	}
+	rel, err := filepath.Rel(resolvedRoot, resolvedPath)
+	if err != nil {
+		return fmt.Errorf("compare with selected root: %w", err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("resolved path %s is outside selected Claude root %s", resolvedPath, resolvedRoot)
+	}
+	return nil
 }
 
 func resolveClaudeRoot(opts Options) (string, string) {
