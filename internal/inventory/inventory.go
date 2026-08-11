@@ -462,6 +462,10 @@ func requirePathWithinRoot(root, path string) error {
 	if err != nil {
 		return fmt.Errorf("resolve selected root: %w", err)
 	}
+	pathAbs := filepath.Clean(path)
+	if err := requireComponentContainment(rootAbs, pathAbs); err != nil {
+		return fmt.Errorf("lexical containment: %w", err)
+	}
 	resolvedRoot, err := filepath.EvalSymlinks(rootAbs)
 	if err != nil {
 		return fmt.Errorf("resolve selected root symlinks: %w", err)
@@ -470,12 +474,19 @@ func requirePathWithinRoot(root, path string) error {
 	if err != nil {
 		return fmt.Errorf("resolve install path symlinks: %w", err)
 	}
-	rel, err := filepath.Rel(resolvedRoot, resolvedPath)
+	if err := requireComponentContainment(resolvedRoot, resolvedPath); err != nil {
+		return fmt.Errorf("resolved containment: %w", err)
+	}
+	return nil
+}
+
+func requireComponentContainment(root, path string) error {
+	rel, err := filepath.Rel(root, path)
 	if err != nil {
-		return fmt.Errorf("compare with selected root: %w", err)
+		return fmt.Errorf("compare path with selected root: %w", err)
 	}
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("resolved path %s is outside selected Claude root %s", resolvedPath, resolvedRoot)
+		return fmt.Errorf("path %s is outside selected Claude root %s", path, root)
 	}
 	return nil
 }

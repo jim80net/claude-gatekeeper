@@ -615,6 +615,21 @@ func TestCollectEffectiveClaudeRootContract(t *testing.T) {
 		}
 	})
 
+	t.Run("external symlink alias cannot credit plugin inside selected root", func(t *testing.T) {
+		home := t.TempDir()
+		alternate := filepath.Join(home, "alternate")
+		insidePlugin := makePluginRoot(t, alternate)
+		externalAlias := filepath.Join(home, "external-plugin-alias")
+		if err := os.Symlink(insidePlugin, externalAlias); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(alternate, "plugins", "installed_plugins.json"), `{"plugins":{"claude-gatekeeper@market":[{"installPath":"`+externalAlias+`"}]}}`, 0644)
+		report, err := Collect(Options{Home: home, ClaudeRoot: alternate, RequiredHarness: "claude", MinSurfaces: 1})
+		if err != nil || report.OK || report.ClaudeRegistration.Status != "error" || len(report.ClaudeRegistration.Sources) != 0 || !report.HasFileErrors() || !strings.Contains(strings.Join(report.ClaudeRegistration.Errors, " "), "lexical containment") {
+			t.Fatalf("report=%#v err=%v", report, err)
+		}
+	})
+
 	t.Run("alternate registry cannot credit lexical prefix sibling", func(t *testing.T) {
 		home := t.TempDir()
 		alternate := filepath.Join(home, "alternate")

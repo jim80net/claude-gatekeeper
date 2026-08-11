@@ -308,6 +308,27 @@ func TestRunDoctorAlternateClaudeRootCannotUseDefaultPluginOrGlobals(t *testing.
 	if code != 2 || !strings.Contains(stdout.String(), "outside selected Claude root") || !strings.Contains(stdout.String(), `"status": "error"`) || !strings.Contains(stdout.String(), `"sources": []`) {
 		t.Fatalf("cross-root registry control code=%d: %s", code, stdout.String())
 	}
+
+	insidePlugin := filepath.Join(alternate, "plugins", "cache", "inside-gatekeeper")
+	insideHook := filepath.Join(insidePlugin, "hooks", "hooks.json")
+	if err := os.MkdirAll(filepath.Dir(insideHook), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(insideHook, []byte(`{"hooks":{"PreToolUse":[{"hooks":[{"command":"${CLAUDE_PLUGIN_ROOT}/bin/run.sh"}]}]}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	externalAlias := filepath.Join(home, "external-plugin-alias")
+	if err := os.Symlink(insidePlugin, externalAlias); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(registry, []byte(`{"plugins":{"claude-gatekeeper@market":[{"installPath":"`+externalAlias+`"}]}}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	stdout.Reset()
+	code = run(strings.NewReader(""), &stdout, []string{"doctor", "--json"})
+	if code != 2 || !strings.Contains(stdout.String(), "lexical containment") || !strings.Contains(stdout.String(), `"status": "error"`) || !strings.Contains(stdout.String(), `"sources": []`) {
+		t.Fatalf("external alias control code=%d: %s", code, stdout.String())
+	}
 }
 
 func TestRunDoctorFailureExitCodes(t *testing.T) {
