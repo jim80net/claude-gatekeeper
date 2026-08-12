@@ -35,6 +35,36 @@ func setupTestHome(t *testing.T) {
 	os.Setenv("HOME", homeDir)
 }
 
+func TestRunTopLevelHelpDiscoversOperatorCommands(t *testing.T) {
+	var stdout bytes.Buffer
+	if code := run(strings.NewReader(""), &stdout, []string{"--help"}); code != 0 {
+		t.Fatalf("exit code=%d, want 0", code)
+	}
+	help := stdout.String()
+	for _, want := range []string{
+		"With no command, reads one hook event from stdin",
+		"doctor          Inspect selected-root registration",
+		"setup           Register the hook",
+		"test            Run declarative policy cases",
+		"release-verify  Verify release assets",
+	} {
+		if !strings.Contains(help, want) {
+			t.Errorf("help missing %q:\n%s", want, help)
+		}
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(help, "\n"), "\n") {
+		if len(line) > 80 {
+			t.Errorf("help line exceeds 80 columns (%d): %q", len(line), line)
+		}
+	}
+}
+
+func TestRunReleaseVerifyPreferredSpellingIsRecognized(t *testing.T) {
+	if code := run(strings.NewReader(""), &bytes.Buffer{}, []string{"release-verify"}); code != 2 {
+		t.Fatalf("release-verify exit code=%d, want usage exit 2", code)
+	}
+}
+
 func TestRunAuthDomainsShadowIsExplicitlyNonEnforcing(t *testing.T) {
 	now := time.Now().UTC()
 	policy, request, coverage := authdomainsFixture(now)

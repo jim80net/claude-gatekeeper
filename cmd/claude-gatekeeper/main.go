@@ -21,7 +21,7 @@
 //	doctor    Inventory live gatekeeper hook surfaces and report drift.
 //	test      Run declarative policy cases against live or explicit config.
 //	auth-domains shadow  Inspect D1 contracts without enforcing them.
-//	verify-release Verify a published release and live binary stamps.
+//	release-verify Verify a published release and live binary stamps.
 package main
 
 import (
@@ -58,6 +58,9 @@ func run(stdin io.Reader, stdout io.Writer, args []string) int {
 	// Check for subcommands before flag parsing.
 	if len(args) > 0 {
 		switch args[0] {
+		case "-h", "--help":
+			writeTopLevelHelp(stdout)
+			return 0
 		case "migrate":
 			return runMigrate(args[1:])
 		case "setup":
@@ -70,7 +73,7 @@ func run(stdin io.Reader, stdout io.Writer, args []string) int {
 			return runPolicyTest(stdout, args[1:])
 		case "auth-domains":
 			return runAuthDomains(stdout, args[1:])
-		case "verify-release":
+		case "release-verify", "verify-release":
 			return runReleaseVerify(stdout, args[1:])
 		case "version":
 			fmt.Fprintf(os.Stderr, "claude-gatekeeper %s\n", version)
@@ -111,6 +114,28 @@ func run(stdin io.Reader, stdout io.Writer, args []string) int {
 	installDefaultConfig()
 
 	return runHook(stdin, stdout, ad, *debug)
+}
+
+func writeTopLevelHelp(w io.Writer) {
+	fmt.Fprintln(w, `Usage: claude-gatekeeper [hook flags]
+       claude-gatekeeper <command> [options]
+
+With no command, reads one hook event from stdin and writes a harness decision.
+
+Commands:
+  doctor          Inspect selected-root registration and hook drift
+  setup           Register the hook for Claude, Codex, or Grok
+  test            Run declarative policy cases
+  release-verify  Verify release assets and live binary stamps
+  migrate         Convert Claude permissions to gatekeeper TOML
+  uninstall       Remove Claude hook registration
+  auth-domains    Inspect authorization-domain contracts in shadow mode
+  version         Print the version
+
+Hook flags:
+  --harness name  Target claude, codex, or grok (default: claude)
+  --debug         Enable diagnostic output on stderr
+  --version       Print the version`)
 }
 
 func runAuthDomains(stdout io.Writer, args []string) int {
@@ -188,11 +213,11 @@ func runReleaseVerify(stdout io.Writer, args []string) int {
 		if fs.NArg() == 1 {
 			tag = fs.Arg(0)
 		} else {
-			fmt.Fprintln(os.Stderr, "usage: claude-gatekeeper verify-release [options] vX.Y.Z")
+			fmt.Fprintln(os.Stderr, "usage: claude-gatekeeper release-verify [options] vX.Y.Z")
 			return 2
 		}
 	} else if fs.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: claude-gatekeeper verify-release [options] vX.Y.Z")
+		fmt.Fprintln(os.Stderr, "usage: claude-gatekeeper release-verify [options] vX.Y.Z")
 		return 2
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
