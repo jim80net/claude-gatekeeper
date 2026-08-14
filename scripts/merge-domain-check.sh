@@ -5,9 +5,10 @@
 #   A seat with .gatekeeper/lead may merge ONLY within its authority domain.
 #   CWD lead alone must not authorize `gh pr merge --repo OTHER`.
 #
-# Invoked as a gatekeeper precondition. Always exits 0 and prints ONE token
-# on stdout (deny rules match deny tokens; non-deny tokens skip the rule so
-# the standing clean-gates ALLOW can fire). Never exit non-zero on a deny
+# Invoked as a gatekeeper precondition. Always exits 0 and prints either OK or
+# one factual "Merge denied:" diagnostic on stdout. Deny rules match the
+# diagnostic; OK skips the rule so the standing clean-gates ALLOW can fire.
+# Never exit non-zero on a deny
 # path — a failed precondition *skips* the deny rule (fail-open).
 #
 # Environment (set by the engine for every precondition):
@@ -19,12 +20,12 @@
 #      flotilla-dev's roster `primary_repo` should materialize this file.
 #   2. Else: owner/name parsed from `git remote get-url origin`.
 #
-# Tokens (matched by precondition_match = '^(EXEC|FOREIGN|UNPARSEABLE|NODOMAIN)$'):
-#   EXEC         — no .gatekeeper/lead in the effective cwd
-#   FOREIGN      — explicit target repo is outside the seat domain
-#   UNPARSEABLE  — command names a target we cannot extract → fail-closed
-#   NODOMAIN     — explicit target present but seat has no resolvable domain
-#   OK           — lead + (implicit cwd target, or explicit target in domain)
+# Deny arms (matched by precondition_match = '^Merge denied:'):
+#   not_lead          — no .gatekeeper/lead in the effective cwd
+#   domain_mismatch   — explicit target repo is outside the resolved domain
+#   target_unresolved — command names a target we cannot extract → fail-closed
+#   domain_unresolved — explicit target present but no domain resolves
+#   OK                — lead + (implicit cwd target, or target in domain)
 #
 # Explicit targets recognized:
 #   gh pr merge ... --repo OWNER/REPO | -R OWNER/REPO | --repo=OWNER/REPO
@@ -35,6 +36,9 @@
 set -eu
 
 cmd=${GATEKEEPER_INPUT-}
+effective_cwd=$(pwd -P)
+lead_marker=$effective_cwd/.gatekeeper/lead
+domain_marker=$effective_cwd/.gatekeeper/domain
 
 normalize() {
 	printf '%s' "$1" | tr '[:upper:]' '[:lower:]'
@@ -63,11 +67,14 @@ remote_to_owner_repo() {
 # DOMAIN_PRIMARY: first entry (may be empty).
 DOMAIN_LIST=
 DOMAIN_PRIMARY=
+DOMAIN_SOURCE=
 
 load_domain() {
 	DOMAIN_LIST=
 	DOMAIN_PRIMARY=
+	DOMAIN_SOURCE=
 	if [ -f .gatekeeper/domain ]; then
+		DOMAIN_SOURCE=$domain_marker
 		while IFS= read -r line || [ -n "$line" ]; do
 			# strip comments and whitespace
 			line=$(printf '%s' "$line" | sed -e 's/#.*//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
@@ -91,7 +98,20 @@ load_domain() {
 			DOMAIN_PRIMARY=$n
 			DOMAIN_LIST="${n}
 "
+			DOMAIN_SOURCE='git remote origin'
 		fi
+	fi
+}
+
+resolved_domains() {
+	printf '%s' "$DOMAIN_LIST" | tr '\n' ',' | sed 's/,$//'
+}
+
+domain_evidence() {
+	if [ -f .gatekeeper/domain ]; then
+		printf 'domain_marker=%s (consulted,present); domain_source=%s' "$domain_marker" "$DOMAIN_SOURCE"
+	else
+		printf 'domain_marker=%s (consulted,absent); domain_source=%s' "$domain_marker" "${DOMAIN_SOURCE:-git remote origin (unresolved)}"
 	fi
 }
 
@@ -147,7 +167,7 @@ extract_target() {
 # --- main --------------------------------------------------------------------
 
 if [ ! -f .gatekeeper/lead ]; then
-	printf 'EXEC\n'
+	printf 'Merge denied: arm=not_lead; lead_marker=%s (consulted,absent)\n' "$lead_marker"
 	exit 0
 fi
 
@@ -156,7 +176,7 @@ target=$(extract_target | tr -d '\r' | head -n1)
 
 case $target in
 UNPARSEABLE)
-	printf 'UNPARSEABLE\n'
+	printf 'Merge denied: arm=target_unresolved; requested_target=unresolved; lead_marker=%s (consulted,present); %s\n' "$lead_marker" "$(domain_evidence)"
 	exit 0
 	;;
 "")
@@ -167,7 +187,7 @@ UNPARSEABLE)
 esac
 
 if [ -z "$DOMAIN_LIST" ]; then
-	printf 'NODOMAIN\n'
+	printf 'Merge denied: arm=domain_unresolved; resolved_domains=none; requested_target=%s; lead_marker=%s (consulted,present); %s\n' "$(normalize "$target")" "$lead_marker" "$(domain_evidence)"
 	exit 0
 fi
 
@@ -176,5 +196,5 @@ if domain_contains "$target"; then
 	exit 0
 fi
 
-printf 'FOREIGN\n'
+printf 'Merge denied: arm=domain_mismatch; resolved_domains=%s; requested_target=%s; lead_marker=%s (consulted,present); %s\n' "$(resolved_domains)" "$(normalize "$target")" "$lead_marker" "$(domain_evidence)"
 exit 0

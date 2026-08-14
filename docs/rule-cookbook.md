@@ -226,18 +226,21 @@ Without that file, the script falls back to the `origin` remote. Then add:
 tool               = 'Bash'
 input              = 'gh\s+pr\s+merge\b'
 precondition       = '/absolute/path/to/scripts/merge-domain-check.sh'
-precondition_match = '^(EXEC|FOREIGN|UNPARSEABLE|NODOMAIN)$'
+precondition_match = '^Merge denied:'
 decision           = 'deny'
-reason             = 'Merge outside seat authority domain or non-lead seat'
+reason             = '{{precondition_output}}'
 ```
 
 The engine exports the heredoc-stripped command as `GATEKEEPER_INPUT` to the
-precondition. The helper returns denial tokens for an executor seat, a foreign
-repository, an unparseable explicit target, or a missing domain. It returns
+precondition. The helper returns a factual denial for a non-lead seat, a foreign
+repository, an unparseable explicit target, or a missing domain. With
+`{{precondition_output}}`, that matched diagnostic becomes the deny reason. A
+domain mismatch names the resolved domains, requested target, and marker paths
+consulted; it does not recommend changing those markers. The helper returns
 `OK` only for a lead whose target is implicit in the current repository or
 explicitly belongs to the configured domain.
 
-The helper deliberately prints a denial token and exits successfully on denial.
+The helper deliberately prints a denial diagnostic and exits successfully on denial.
 A nonzero precondition exit means “precondition failed” and skips the rule; using
 exit status as the denial signal would fail open.
 

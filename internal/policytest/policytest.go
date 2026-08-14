@@ -12,9 +12,9 @@ import (
 	"text/tabwriter"
 
 	"github.com/BurntSushi/toml"
+	"github.com/jim80net/claude-gatekeeper/internal/policyengine"
 	"github.com/jim80net/gatekeeper-core/canonical"
 	"github.com/jim80net/gatekeeper-core/config"
-	"github.com/jim80net/gatekeeper-core/engine"
 )
 
 // File is the top-level TOML or JSON policy-test document.
@@ -145,7 +145,7 @@ func Run(f File, configPath, defaultCWD string) ([]Result, error) {
 				return nil, fmt.Errorf("%s: load config: %w", c.Name, err)
 			}
 		}
-		eng, err := engine.New(cfg, false)
+		eng, err := policyengine.New(cfg, false)
 		if err != nil {
 			return nil, fmt.Errorf("%s: compile config: %w", c.Name, err)
 		}

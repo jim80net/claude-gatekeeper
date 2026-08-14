@@ -39,13 +39,13 @@ import (
 	"github.com/jim80net/claude-gatekeeper/internal/authdomains"
 	"github.com/jim80net/claude-gatekeeper/internal/inventory"
 	"github.com/jim80net/claude-gatekeeper/internal/migrate"
+	"github.com/jim80net/claude-gatekeeper/internal/policyengine"
 	"github.com/jim80net/claude-gatekeeper/internal/policytest"
 	"github.com/jim80net/claude-gatekeeper/internal/posture"
 	"github.com/jim80net/claude-gatekeeper/internal/releaseverify"
 	"github.com/jim80net/claude-gatekeeper/internal/setup"
 	"github.com/jim80net/gatekeeper-core/canonical"
 	"github.com/jim80net/gatekeeper-core/config"
-	"github.com/jim80net/gatekeeper-core/engine"
 )
 
 var version = "dev"
@@ -412,7 +412,7 @@ func runHook(stdin io.Reader, stdout io.Writer, ad adapter.Adapter, debug bool) 
 	}
 
 	// Compile the engine.
-	eng, err := engine.New(cfg, debug)
+	eng, err := policyengine.New(cfg, debug)
 	if err != nil {
 		canonical.Debugf("error creating engine: %v", err)
 		return emit(stdout, ad, errVerdict(onError, "engine compile error"))

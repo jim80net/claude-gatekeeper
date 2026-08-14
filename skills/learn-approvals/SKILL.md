@@ -79,7 +79,7 @@ Remove entries from `settings.local.json` `permissions.allow` that are now redun
 | `tool` | Tool name regex: `'Bash'`, `'Read'`, `'Read\|Write'` |
 | `input` | PCRE2 regex matched against tool input |
 | `decision` | `"allow"` or `"deny"` (deny always wins) |
-| `reason` | Human-readable explanation |
+| `reason` | Human-readable explanation, or `{{precondition_output}}` for matched precondition stdout |
 | `precondition` | Optional shell command for context-dependent rules |
 | `precondition_match` | Regex matched against precondition stdout |
 

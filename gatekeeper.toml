@@ -137,9 +137,9 @@ reason            = "Implicit push to protected branch (currently on main/master
 #   tool  = 'Bash'
 #   input = 'gh\s+pr\s+merge\b'
 #   precondition = '/path/to/merge-domain-check.sh'
-#   precondition_match = '^(EXEC|FOREIGN|UNPARSEABLE|NODOMAIN)$'
+#   precondition_match = '^Merge denied:'
 #   decision = 'deny'
-#   reason = 'Merge outside seat authority domain or non-lead seat'
+#   reason = '{{precondition_output}}'
 #
 # Domain = lines in .gatekeeper/domain (owner/name), else git remote origin.
 # Fail-closed on unparseable explicit targets. Not enabled in the shipped
