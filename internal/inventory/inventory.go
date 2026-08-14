@@ -12,9 +12,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/jim80net/claude-gatekeeper/internal/codextrust"
 )
@@ -826,6 +829,9 @@ func WriteJSON(w io.Writer, report Report) error {
 
 // WriteTable writes the human-readable surface and per-file coverage tables.
 func WriteTable(w io.Writer, report Report) error {
+	if width := outputColumns(); width > 0 {
+		return writeCompactTable(w, report, width)
+	}
 	if _, err := fmt.Fprintf(w, "CLAUDE ROOT: %s (source: %s)\n", emptyDash(report.ClaudeRoot), emptyDash(report.ClaudeRootSource)); err != nil {
 		return err
 	}
@@ -914,6 +920,161 @@ func WriteTable(w io.Writer, report Report) error {
 		}
 	}
 	return nil
+}
+
+func outputColumns() int {
+	width, err := strconv.Atoi(strings.TrimSpace(os.Getenv("COLUMNS")))
+	if err != nil || width < 40 {
+		return 0
+	}
+	return width
+}
+
+func writeCompactTable(w io.Writer, report Report, width int) error {
+	if err := writeWrappedField(w, width, "CLAUDE ROOT ("+emptyDash(report.ClaudeRootSource)+"): ", emptyDash(report.ClaudeRoot)); err != nil {
+		return err
+	}
+	if err := writeWrappedField(w, width, "REQUIREMENT: ", strings.ToUpper(emptyDash(report.RequiredHarness))); err != nil {
+		return err
+	}
+	registration := strings.ToUpper(emptyDash(report.ClaudeRegistration.Status)) + "; FIRING: " + strings.ToUpper(emptyDash(report.ClaudeRegistration.FiringStatus))
+	if err := writeWrappedField(w, width, "CLAUDE REGISTRATION: ", registration); err != nil {
+		return err
+	}
+	if report.ClaudeRegistration.FiringReason != "" {
+		if err := writeWrappedField(w, width, "FIRING REASON: ", report.ClaudeRegistration.FiringReason); err != nil {
+			return err
+		}
+	}
+	for _, source := range report.ClaudeRegistration.Sources {
+		if err := writeWrappedField(w, width, "REGISTRATION SOURCE "+source.Kind+": ", source.Path); err != nil {
+			return err
+		}
+	}
+	for _, diagnosticErr := range report.ClaudeRegistration.Errors {
+		if err := writeWrappedField(w, width, "REGISTRATION ERROR: ", diagnosticErr); err != nil {
+			return err
+		}
+	}
+	if len(report.Surfaces) > 0 {
+		if _, err := fmt.Fprintln(w, "SURFACES"); err != nil {
+			return err
+		}
+		for _, surface := range report.Surfaces {
+			verdict := "OK"
+			if len(surface.Drift) > 0 {
+				verdict = "DRIFT"
+			}
+			if err := writeWrappedField(w, width, "- SURFACE "+surface.Kind+": ", verdict); err != nil {
+				return err
+			}
+			for _, field := range []struct{ label, value string }{
+				{"  SCOPE: ", surface.Scope},
+				{"  ROOT: ", surface.ConfigRoot},
+				{"  CONFIG: ", surface.ConfigPath},
+				{"  HARNESS/VERSION: ", surface.Harness + " / " + emptyDash(surface.Version)},
+				{"  BINARY: ", surface.BinaryPath},
+			} {
+				if err := writeWrappedField(w, width, field.label, emptyDash(field.value)); err != nil {
+					return err
+				}
+			}
+			for _, drift := range surface.Drift {
+				if err := writeWrappedField(w, width, "  DRIFT: ", drift); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	if len(report.Files) > 0 {
+		if _, err := fmt.Fprintln(w, "HOOK FILES"); err != nil {
+			return err
+		}
+		for _, file := range report.Files {
+			if err := writeWrappedField(w, width, "- FILE: ", file.Path); err != nil {
+				return err
+			}
+			facts := fmt.Sprintf("%s / %s; commands=%d; recognized=%d", emptyDash(file.Harness), emptyDash(file.Scope), file.CommandsSeen, file.Recognized)
+			if err := writeWrappedField(w, width, "  COVERAGE: ", facts); err != nil {
+				return err
+			}
+			if err := writeWrappedField(w, width, "  ROOT: ", emptyDash(file.ConfigRoot)); err != nil {
+				return err
+			}
+			for _, warning := range file.Warnings {
+				if err := writeWrappedField(w, width, "  WARNING: ", warning); err != nil {
+					return err
+				}
+			}
+			if file.Error != "" {
+				if err := writeWrappedField(w, width, "  ERROR: ", file.Error); err != nil {
+					return err
+				}
+			}
+			for _, command := range file.Unrecognized {
+				if err := writeWrappedField(w, width, "  UNRECOGNIZED: ", command); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	for _, warning := range report.Warnings {
+		if err := writeWrappedField(w, width, "WARNING: ", warning); err != nil {
+			return err
+		}
+	}
+	if report.VersionInvariant != nil {
+		if err := writeWrappedField(w, width, "VERSION INVARIANT: ", strings.ToUpper(report.VersionInvariant.Status)); err != nil {
+			return err
+		}
+		if report.VersionInvariant.Reason != "" {
+			if err := writeWrappedField(w, width, "VERSION REASON: ", report.VersionInvariant.Reason); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func writeWrappedField(w io.Writer, width int, prefix, value string) error {
+	continuation := strings.Repeat(" ", utf8.RuneCountInString(prefix))
+	remaining := value
+	for {
+		available := width - utf8.RuneCountInString(prefix)
+		if available < 8 {
+			available = 8
+		}
+		line, rest := splitDisplayLine(remaining, available)
+		if _, err := fmt.Fprintln(w, prefix+line); err != nil {
+			return err
+		}
+		if rest == "" {
+			return nil
+		}
+		remaining = rest
+		prefix = continuation
+	}
+}
+
+func splitDisplayLine(value string, width int) (string, string) {
+	runes := []rune(value)
+	if len(runes) <= width {
+		return value, ""
+	}
+	cut := width
+	for i := width; i > width/2; i-- {
+		if unicode.IsSpace(runes[i-1]) {
+			cut = i - 1
+			break
+		}
+		if runes[i-1] == filepath.Separator {
+			cut = i
+			break
+		}
+	}
+	line := strings.TrimRightFunc(string(runes[:cut]), unicode.IsSpace)
+	rest := strings.TrimLeftFunc(string(runes[cut:]), unicode.IsSpace)
+	return line, rest
 }
 
 func sameBinaryPath(left, right string) bool { return canonicalPath(left) == canonicalPath(right) }

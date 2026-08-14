@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -454,6 +455,63 @@ func TestWriteTableIncludesFileErrors(t *testing.T) {
 			t.Errorf("table missing %q:\n%s", want, table.String())
 		}
 	}
+}
+
+func TestWriteTableAdaptsToTerminalColumns(t *testing.T) {
+	report := Report{
+		ClaudeRoot:       "/home/operator/.flotilla/accounts/claude-leadership/claude-config",
+		ClaudeRootSource: "environment",
+		RequiredHarness:  "claude",
+		ClaudeRegistration: Registration{
+			Status:       "registered",
+			FiringStatus: "not_tested",
+			FiringReason: "static Doctor inventory does not execute a known-positive firing control",
+		},
+		Surfaces: []Surface{{
+			Kind:       "claude-plugin",
+			Scope:      "effective-claude-root",
+			ConfigRoot: "/home/operator/.flotilla/accounts/claude-leadership/claude-config",
+			ConfigPath: "/home/operator/.flotilla/accounts/claude-leadership/claude-config/plugins/cache/market/gatekeeper/hooks/hooks.json",
+			Harness:    "claude",
+			Version:    "1.7.0",
+			BinaryPath: "/home/operator/.flotilla/accounts/claude-leadership/claude-config/plugins/cache/market/gatekeeper/bin/claude-gatekeeper",
+		}},
+	}
+	render := func(width string) string {
+		t.Helper()
+		t.Setenv("COLUMNS", width)
+		var out strings.Builder
+		if err := WriteTable(&out, report); err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n") {
+			if len([]rune(line)) > mustAtoi(t, width) {
+				t.Errorf("COLUMNS=%s line width=%d: %q", width, len([]rune(line)), line)
+			}
+		}
+		return out.String()
+	}
+	narrow := render("80")
+	wide := render("160")
+	if narrow == wide {
+		t.Fatal("80- and 160-column Doctor output must differ")
+	}
+	for _, output := range []string{narrow, wide} {
+		for _, want := range []string{"CLAUDE ROOT (environment):", "- SURFACE claude-plugin: OK", "FIRING: NOT_TESTED"} {
+			if !strings.Contains(output, want) {
+				t.Errorf("output missing %q:\n%s", want, output)
+			}
+		}
+	}
+}
+
+func mustAtoi(t *testing.T, value string) int {
+	t.Helper()
+	result, err := strconv.Atoi(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
 }
 
 func TestEmptyJSONUsesArraysAndTableHasNoSurfaceHeader(t *testing.T) {

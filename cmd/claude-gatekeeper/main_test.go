@@ -65,6 +65,24 @@ func TestRunReleaseVerifyPreferredSpellingIsRecognized(t *testing.T) {
 	}
 }
 
+func TestRunReleaseVerifyHelpMatchesCompatibilityAlias(t *testing.T) {
+	var preferred, compatibility bytes.Buffer
+	if code := run(strings.NewReader(""), &preferred, []string{"release-verify", "--help"}); code != 0 {
+		t.Fatalf("release-verify --help exit code=%d, want 0", code)
+	}
+	if code := run(strings.NewReader(""), &compatibility, []string{"verify-release", "--help"}); code != 0 {
+		t.Fatalf("verify-release --help exit code=%d, want 0", code)
+	}
+	if preferred.Len() == 0 || preferred.String() != compatibility.String() {
+		t.Fatalf("preferred help=%q compatibility help=%q", preferred.String(), compatibility.String())
+	}
+	for _, want := range []string{"Usage of release-verify:", "-host-binary", "-plugin-binary", "-repo"} {
+		if !strings.Contains(preferred.String(), want) {
+			t.Errorf("help missing %q:\n%s", want, preferred.String())
+		}
+	}
+}
+
 func TestRunAuthDomainsShadowIsExplicitlyNonEnforcing(t *testing.T) {
 	now := time.Now().UTC()
 	policy, request, coverage := authdomainsFixture(now)

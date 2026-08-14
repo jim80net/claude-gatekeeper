@@ -191,8 +191,14 @@ func runAuthDomains(stdout io.Writer, args []string) int {
 }
 
 func runReleaseVerify(stdout io.Writer, args []string) int {
-	fs := flag.NewFlagSet("verify-release", flag.ContinueOnError)
+	fs := flag.NewFlagSet("release-verify", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
+	for _, arg := range args {
+		if arg == "-h" || arg == "--help" {
+			fs.SetOutput(stdout)
+			break
+		}
+	}
 	repo := fs.String("repo", "jim80net/gatekeeper-claude", "GitHub owner/repository")
 	hostBinary := fs.String("host-binary", "", "Explicit live host binary path")
 	pluginBinary := fs.String("plugin-binary", "", "Explicit active plugin binary path")
