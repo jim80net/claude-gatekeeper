@@ -26,6 +26,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -289,6 +290,19 @@ func runPolicyTest(stdout io.Writer, args []string) int {
 	return 0
 }
 
+type repeatedStringFlag []string
+
+func (f *repeatedStringFlag) String() string { return strings.Join(*f, ",") }
+
+func (f *repeatedStringFlag) Set(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return errors.New("value must not be empty")
+	}
+	*f = append(*f, value)
+	return nil
+}
+
 func runDoctor(stdout io.Writer, args []string) int {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -300,6 +314,8 @@ func runDoctor(stdout io.Writer, args []string) int {
 	minSurfaces := fs.Int("min-surfaces", 1, "Minimum recognized surfaces required for success")
 	checkLatest := fs.Bool("check-latest", false, "Compare enforcing binary versions with the latest published release")
 	latestURL := fs.String("latest-release-url", "https://api.github.com/repos/jim80net/gatekeeper-claude/releases/latest", "Latest published release API URL")
+	var latestRequiredEnv repeatedStringFlag
+	fs.Var(&latestRequiredEnv, "latest-require-env", "Environment variable required before probing latest release (repeatable)")
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return 0
@@ -320,6 +336,9 @@ func runDoctor(stdout io.Writer, args []string) int {
 		options.ClaudeRootSource = "cli"
 	}
 	if *checkLatest {
+		options.PublishedVersionPreflight = func() error {
+			return inventory.ValidatePublishedProbeConfig(*latestURL, latestRequiredEnv, os.LookupEnv)
+		}
 		options.PublishedVersionProbe = func() (string, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()

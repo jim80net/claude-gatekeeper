@@ -362,7 +362,26 @@ func TestWriteJSONAndTable(t *testing.T) {
 	}
 }
 
-func TestPublishedVersionInvariantNegativeControls(t *testing.T) {
+func TestPublishedVersionInvariantStatusContract(t *testing.T) {
+	t.Run("current version passes", func(t *testing.T) {
+		home := t.TempDir()
+		bin := filepath.Join(home, "bin", "claude-gatekeeper")
+		writeFile(t, bin, "#!/bin/sh\necho 'claude-gatekeeper 1.6.0'\n", 0755)
+		writeHook(t, filepath.Join(home, ".claude", "settings.json"), bin)
+		preflightCalled := false
+		report, err := Collect(Options{
+			Home: home, MinSurfaces: 1,
+			PublishedVersionPreflight: func() error { preflightCalled = true; return nil },
+			PublishedVersionProbe:     func() (string, error) { return "v1.6.0", nil },
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !report.OK || !preflightCalled || report.VersionInvariant.Status != VersionStatusCurrent || report.VersionInvariant.PublishedLatest != "1.6.0" {
+			t.Fatalf("invariant = %#v preflight_called=%t", report.VersionInvariant, preflightCalled)
+		}
+	})
+
 	t.Run("stale binary names both versions", func(t *testing.T) {
 		home := t.TempDir()
 		bin := filepath.Join(home, "bin", "claude-gatekeeper")
@@ -372,12 +391,12 @@ func TestPublishedVersionInvariantNegativeControls(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if report.OK || report.VersionInvariant.Status != "fail" || !strings.Contains(report.VersionInvariant.Reason, "1.5.1") || !strings.Contains(report.VersionInvariant.Reason, "1.6.0") {
+		if report.OK || report.VersionInvariant.Status != "stale" || !strings.Contains(report.VersionInvariant.Reason, "1.5.1") || !strings.Contains(report.VersionInvariant.Reason, "1.6.0") {
 			t.Fatalf("invariant = %#v", report.VersionInvariant)
 		}
 	})
 
-	t.Run("unreachable published source is unknown", func(t *testing.T) {
+	t.Run("unreachable published source is distinct", func(t *testing.T) {
 		home := t.TempDir()
 		bin := filepath.Join(home, "bin", "claude-gatekeeper")
 		writeFile(t, bin, "#!/bin/sh\necho 'claude-gatekeeper 1.6.0'\n", 0755)
@@ -386,8 +405,30 @@ func TestPublishedVersionInvariantNegativeControls(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if report.OK || report.VersionInvariant.Status != "unknown" || !strings.Contains(report.VersionInvariant.Reason, "offline") {
+		if report.OK || report.VersionInvariant.Status != "unreachable" || !strings.Contains(report.VersionInvariant.Reason, "offline") {
 			t.Fatalf("invariant = %#v", report.VersionInvariant)
+		}
+	})
+
+	t.Run("misconfigured probe does not attempt release source", func(t *testing.T) {
+		home := t.TempDir()
+		bin := filepath.Join(home, "bin", "claude-gatekeeper")
+		writeFile(t, bin, "#!/bin/sh\necho 'claude-gatekeeper 1.6.0'\n", 0755)
+		writeHook(t, filepath.Join(home, ".claude", "settings.json"), bin)
+		probeCalled := false
+		report, err := Collect(Options{
+			Home: home, MinSurfaces: 1,
+			PublishedVersionPreflight: func() error { return errors.New("required environment HTTPS_PROXY is missing or empty") },
+			PublishedVersionProbe: func() (string, error) {
+				probeCalled = true
+				return "v1.6.0", nil
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if report.OK || report.VersionInvariant.Status != "misconfigured" || probeCalled || !strings.Contains(report.VersionInvariant.Reason, "HTTPS_PROXY") {
+			t.Fatalf("invariant = %#v probe_called=%t", report.VersionInvariant, probeCalled)
 		}
 	})
 
@@ -424,7 +465,7 @@ func TestPublishedVersionInvariantNegativeControls(t *testing.T) {
 			t.Fatal(err)
 		}
 		observation := report.VersionInvariant.Observations[0]
-		if report.OK || report.VersionInvariant.Status != "fail" || observation.PathVersion != "1.3.1" || observation.ObservedVersion != "1.5.1" || !strings.Contains(observation.Reason, "published latest 1.6.0") || !strings.Contains(observation.Reason, "plugin path version 1.3.1") {
+		if report.OK || report.VersionInvariant.Status != "stale" || observation.PathVersion != "1.3.1" || observation.ObservedVersion != "1.5.1" || !strings.Contains(observation.Reason, "published latest 1.6.0") || !strings.Contains(observation.Reason, "plugin path version 1.3.1") {
 			t.Fatalf("invariant = %#v", report.VersionInvariant)
 		}
 	})
@@ -442,6 +483,27 @@ func TestFetchPublishedLatest(t *testing.T) {
 	if err != nil || version != "v1.6.0" {
 		t.Fatalf("version=%q err=%v", version, err)
 	}
+}
+
+func TestValidatePublishedProbeConfig(t *testing.T) {
+	t.Run("valid without deployment-specific requirements", func(t *testing.T) {
+		if err := ValidatePublishedProbeConfig("https://example.test/releases/latest", nil, nil); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("invalid URL", func(t *testing.T) {
+		if err := ValidatePublishedProbeConfig("://bad", nil, nil); err == nil {
+			t.Fatal("expected invalid URL error")
+		}
+	})
+
+	t.Run("declared capability absent", func(t *testing.T) {
+		err := ValidatePublishedProbeConfig("https://example.test/releases/latest", []string{"HTTPS_PROXY"}, func(string) (string, bool) { return "", false })
+		if err == nil || !strings.Contains(err.Error(), "HTTPS_PROXY") {
+			t.Fatalf("error = %v", err)
+		}
+	})
 }
 
 func TestWriteTableIncludesFileErrors(t *testing.T) {

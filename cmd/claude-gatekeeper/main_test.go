@@ -491,8 +491,28 @@ func TestRunDoctorJSONChecksPublishedLatest(t *testing.T) {
 	defer server.Close()
 	var stdout bytes.Buffer
 	code := run(strings.NewReader(""), &stdout, []string{"doctor", "--json", "--check-latest", "--latest-release-url", server.URL, "--expected-binary", bin, "--min-surfaces", "1"})
-	if code != 1 || !strings.Contains(stdout.String(), `"status": "fail"`) || !strings.Contains(stdout.String(), `"published_latest": "1.6.0"`) || !strings.Contains(stdout.String(), `"observed_version": "1.5.1"`) {
+	if code != 1 || !strings.Contains(stdout.String(), `"status": "stale"`) || !strings.Contains(stdout.String(), `"published_latest": "1.6.0"`) || !strings.Contains(stdout.String(), `"observed_version": "1.5.1"`) {
 		t.Fatalf("code=%d output=%s", code, stdout.String())
+	}
+}
+
+func TestRunDoctorMisconfiguredLatestProbeDoesNotAttemptHTTP(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("GATEKEEPER_TEST_PROXY", "")
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		_, _ = io.WriteString(w, `{"tag_name":"v1.6.0"}`)
+	}))
+	defer server.Close()
+
+	var stdout bytes.Buffer
+	code := run(strings.NewReader(""), &stdout, []string{
+		"doctor", "--json", "--check-latest", "--latest-release-url", server.URL,
+		"--latest-require-env", "GATEKEEPER_TEST_PROXY", "--require-harness", "any", "--min-surfaces", "0",
+	})
+	if code != 1 || requests != 0 || !strings.Contains(stdout.String(), `"status": "misconfigured"`) || !strings.Contains(stdout.String(), "GATEKEEPER_TEST_PROXY") {
+		t.Fatalf("code=%d requests=%d output=%s", code, requests, stdout.String())
 	}
 }
 

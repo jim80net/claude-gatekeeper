@@ -99,8 +99,10 @@ registration/firing state, `expected_binary`, `expected_version`, `min_surfaces`
 `warnings`, scope-labelled `files`, and scope-labelled `surfaces`. With
 `--check-latest`, it also
 contains a `version_invariant` built from executable-reported surface versions
-and the latest published release. `fail` and `unknown` both exit nonzero; the
-published source or an executable probe can never fail into `OK`. See
+and the latest published release. `stale`, `misconfigured`, `unreachable`, and
+residual `unknown` all exit nonzero; the published source or an executable probe
+can never fail into `OK`. Deployment-specific probe prerequisites can be declared
+with repeatable `--latest-require-env NAME` arguments. See
 [`docs/doctor-detector.md`](docs/doctor-detector.md) for the independent
 user-timer template and its deployment boundary.
 The `inventory` subcommand is an exact alias for `doctor`.

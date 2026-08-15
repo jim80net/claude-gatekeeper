@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,18 +25,27 @@ import (
 
 const binaryName = "claude-gatekeeper"
 
+const (
+	VersionStatusCurrent       = "current"
+	VersionStatusStale         = "stale"
+	VersionStatusMisconfigured = "misconfigured"
+	VersionStatusUnreachable   = "unreachable"
+	VersionStatusUnknown       = "unknown"
+)
+
 // Options controls hook discovery and drift expectations.
 type Options struct {
-	Home                  string
-	ClaudeRoot            string
-	ClaudeRootSource      string
-	RequiredHarness       string
-	ExpectedBinary        string
-	ExpectedVersion       string
-	MinSurfaces           int
-	VersionProbe          func(string) (string, error)
-	LookPath              func(string) (string, error)
-	PublishedVersionProbe func() (string, error)
+	Home                      string
+	ClaudeRoot                string
+	ClaudeRootSource          string
+	RequiredHarness           string
+	ExpectedBinary            string
+	ExpectedVersion           string
+	MinSurfaces               int
+	VersionProbe              func(string) (string, error)
+	LookPath                  func(string) (string, error)
+	PublishedVersionPreflight func() error
+	PublishedVersionProbe     func() (string, error)
 }
 
 // Report is the machine-readable result of a hook inventory.
@@ -70,7 +80,8 @@ type RegistrationSource struct {
 }
 
 // VersionInvariant compares versions reported by enforcing binaries with the
-// latest published release. Status is current, fail, or unknown.
+// latest published release. Status is current, stale, misconfigured,
+// unreachable, or unknown.
 type VersionInvariant struct {
 	Status          string               `json:"status"`
 	PublishedLatest string               `json:"published_latest,omitempty"`
@@ -299,18 +310,26 @@ func Collect(opts Options) (Report, error) {
 	})
 	sort.Slice(report.Files, func(i, j int) bool { return report.Files[i].Path < report.Files[j].Path })
 	if opts.PublishedVersionProbe != nil {
-		report.VersionInvariant = evaluateVersionInvariant(requiredSurfaces(report.Surfaces, requiredHarness), opts.PublishedVersionProbe)
-		if report.VersionInvariant.Status != "current" {
+		report.VersionInvariant = evaluateVersionInvariant(requiredSurfaces(report.Surfaces, requiredHarness), opts.PublishedVersionPreflight, opts.PublishedVersionProbe)
+		if report.VersionInvariant.Status != VersionStatusCurrent {
 			report.OK = false
 		}
 	}
 	return report, nil
 }
 
-func evaluateVersionInvariant(surfaces []Surface, publishedProbe func() (string, error)) *VersionInvariant {
-	result := &VersionInvariant{Status: "unknown", Observations: []VersionObservation{}}
+func evaluateVersionInvariant(surfaces []Surface, preflight func() error, publishedProbe func() (string, error)) *VersionInvariant {
+	result := &VersionInvariant{Status: VersionStatusUnknown, Observations: []VersionObservation{}}
+	if preflight != nil {
+		if err := preflight(); err != nil {
+			result.Status = VersionStatusMisconfigured
+			result.Reason = "published latest probe is not configured: " + err.Error()
+			return result
+		}
+	}
 	published, err := publishedProbe()
 	if err != nil {
+		result.Status = VersionStatusUnreachable
 		result.Reason = "published latest unavailable: " + err.Error()
 		return result
 	}
@@ -323,35 +342,35 @@ func evaluateVersionInvariant(surfaces []Surface, publishedProbe func() (string,
 		result.Reason = "no enforcing surfaces discovered"
 		return result
 	}
-	result.Status = "current"
+	result.Status = VersionStatusCurrent
 	for _, surface := range surfaces {
-		observation := VersionObservation{Surface: surface.Kind, BinaryPath: surface.BinaryPath, ExpectedVersion: result.PublishedLatest, Status: "current"}
+		observation := VersionObservation{Surface: surface.Kind, BinaryPath: surface.BinaryPath, ExpectedVersion: result.PublishedLatest, Status: VersionStatusCurrent}
 		if surface.Version == "" {
-			observation.Status = "unknown"
+			observation.Status = VersionStatusUnknown
 			observation.Reason = "binary version unavailable; execution probe did not succeed"
-			if result.Status != "fail" {
-				result.Status = "unknown"
+			if result.Status != VersionStatusStale {
+				result.Status = VersionStatusUnknown
 				result.Reason = observation.Reason
 			}
 		} else {
 			observation.ObservedVersion = normalizeVersion(surface.Version)
 			if observation.ObservedVersion != result.PublishedLatest {
-				observation.Status = "stale"
+				observation.Status = VersionStatusStale
 				observation.Reason = fmt.Sprintf("enforcing version %s != published latest %s", observation.ObservedVersion, result.PublishedLatest)
-				result.Status = "fail"
+				result.Status = VersionStatusStale
 				result.Reason = observation.Reason
 			}
 			if surface.Kind == "claude-plugin" {
 				observation.PathVersion = pluginPathVersion(surface.BinaryPath)
 				if observation.PathVersion != "" && normalizeVersion(observation.PathVersion) != observation.ObservedVersion {
-					observation.Status = "stale"
+					observation.Status = VersionStatusStale
 					pathReason := fmt.Sprintf("plugin path version %s != binary-reported version %s", observation.PathVersion, observation.ObservedVersion)
 					if observation.Reason == "" {
 						observation.Reason = pathReason
 					} else {
 						observation.Reason += "; " + pathReason
 					}
-					result.Status = "fail"
+					result.Status = VersionStatusStale
 					result.Reason = pathReason
 				}
 			}
@@ -380,6 +399,31 @@ func pluginPathVersion(binary string) string {
 		}
 	}
 	return version
+}
+
+// ValidatePublishedProbeConfig checks deployment prerequisites without making
+// a network request. requiredEnv lets a unit declare environment capabilities
+// (for example a mandatory proxy, token, or trust path) that its deployment
+// requires even though the public default endpoint does not require them.
+func ValidatePublishedProbeConfig(rawURL string, requiredEnv []string, lookupEnv func(string) (string, bool)) error {
+	parsed, err := url.ParseRequestURI(rawURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return fmt.Errorf("invalid latest release URL %q", rawURL)
+	}
+	if lookupEnv == nil {
+		lookupEnv = os.LookupEnv
+	}
+	for _, name := range requiredEnv {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return errors.New("required probe environment name is empty")
+		}
+		value, ok := lookupEnv(name)
+		if !ok || strings.TrimSpace(value) == "" {
+			return fmt.Errorf("required environment %s is missing or empty", name)
+		}
+	}
+	return nil
 }
 
 // FetchPublishedLatest returns the tag of the latest non-draft GitHub release.
