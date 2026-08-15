@@ -27,6 +27,8 @@ func run(args []string) int {
 		return runAttestFiring(args[1:])
 	case "verify-firing":
 		return runVerifyFiring(args[1:])
+	case "drive-session":
+		return runDriveSession(args[1:])
 	case "-h", "--help", "help":
 		usage()
 		return 0
@@ -43,7 +45,8 @@ func usage() {
 Commands:
   release-matrix  Test one exact candidate against planted three-root fixtures
   attest-firing   Record a disposable live session's benign and deny arms
-  verify-firing   Recheck the recorded PID identity; replacement becomes no_data`)
+  verify-firing   Recheck the recorded PID identity; replacement becomes no_data
+  drive-session   Drive a disposable harness adapter through benign and deny arms`)
 }
 
 func runReleaseMatrix(args []string) int {
@@ -138,6 +141,41 @@ func runVerifyFiring(args []string) int {
 		return 1
 	}
 	return 2
+}
+
+func runDriveSession(args []string) int {
+	fs := flag.NewFlagSet("drive-session", flag.ContinueOnError)
+	harness := fs.String("harness", "", "claude, codex, or grok")
+	driver := fs.String("driver", "", "Absolute harness session-driver executable")
+	expectedExecutable := fs.String("expected-native-executable", "", "Absolute native harness executable expected at the reported PID")
+	output := fs.String("output", "", "Session result JSON path")
+	timeout := fs.Duration("timeout", 2*time.Minute, "Maximum driver runtime")
+	if err := fs.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return 0
+		}
+		return 2
+	}
+	if *driver == "" || *expectedExecutable == "" || *output == "" || *timeout <= 0 {
+		return 2
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+	result, err := walk.RunDisposableSession(ctx, walk.SessionDriverOptions{
+		Harness: *harness, Driver: *driver, ExpectedExecutable: *expectedExecutable, Args: fs.Args(),
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "drive-session:", err)
+		return 2
+	}
+	if err := walk.WriteJSONFile(*output, result); err != nil {
+		fmt.Fprintln(os.Stderr, "drive-session:", err)
+		return 2
+	}
+	if err := writeJSON(result); err != nil {
+		return 2
+	}
+	return 0
 }
 
 func writeJSON(value any) error {
