@@ -20,6 +20,7 @@ type SessionDriverOptions struct {
 	Harness            string
 	Driver             string
 	ExpectedExecutable string
+	Scenario           string
 	Args               []string
 	TempParent         string
 	Now                time.Time
@@ -40,11 +41,20 @@ type SessionDriverResponse struct {
 }
 
 type DisposableSessionResult struct {
-	Schema      string            `json:"schema"`
-	Status      string            `json:"status"`
-	Harness     string            `json:"harness"`
-	Lifecycle   string            `json:"lifecycle"`
-	Attestation FiringAttestation `json:"attestation"`
+	Schema      string             `json:"schema"`
+	Status      string             `json:"status"`
+	Harness     string             `json:"harness"`
+	Lifecycle   string             `json:"lifecycle"`
+	Transition  *SessionTransition `json:"transition,omitempty"`
+	Attestation *FiringAttestation `json:"attestation,omitempty"`
+}
+
+type SessionTransition struct {
+	Kind         string `json:"kind"`
+	BeforePID    int    `json:"before_pid"`
+	AfterPID     int    `json:"after_pid,omitempty"`
+	BeforeReason string `json:"before_reason,omitempty"`
+	AfterReason  string `json:"after_reason,omitempty"`
 }
 
 type synchronizedBuffer struct {
@@ -70,6 +80,13 @@ func (b *synchronizedBuffer) String() string {
 func RunDisposableSession(ctx context.Context, opts SessionDriverOptions) (DisposableSessionResult, error) {
 	if opts.Harness != "claude" && opts.Harness != "codex" && opts.Harness != "grok" {
 		return DisposableSessionResult{}, fmt.Errorf("unsupported harness %q", opts.Harness)
+	}
+	scenario := opts.Scenario
+	if scenario == "" {
+		scenario = "steady"
+	}
+	if scenario != "steady" && scenario != "interrupted" && scenario != "restart" && scenario != "config-change" {
+		return DisposableSessionResult{}, fmt.Errorf("unsupported session scenario %q", scenario)
 	}
 	if strings.TrimSpace(opts.Driver) == "" || !filepath.IsAbs(opts.Driver) {
 		return DisposableSessionResult{}, errors.New("absolute session driver path is required")
@@ -168,6 +185,94 @@ func RunDisposableSession(ctx context.Context, opts SessionDriverOptions) (Dispo
 	if err := requireSameProcess(identity, inspect); err != nil {
 		return DisposableSessionResult{}, fmt.Errorf("benign arm process identity: %w", err)
 	}
+	if scenario == "interrupted" {
+		interrupted, err := runSessionArm(encoder, decoder, "interrupt", ready.NativePID)
+		if err != nil {
+			return DisposableSessionResult{}, driverStepError(ctx, "interrupt", err, stderr.String())
+		}
+		if interrupted.Status != "interrupted" {
+			return DisposableSessionResult{}, fmt.Errorf("interrupt status = %q, want interrupted", interrupted.Status)
+		}
+		_ = stdin.Close()
+		if err := cmd.Wait(); err != nil {
+			waited = true
+			return DisposableSessionResult{}, driverProtocolError("interrupt", err, stderr.String())
+		}
+		waited = true
+		if current, err := inspect(identity.PID); err == nil && sameProcessIdentity(current, identity) {
+			return DisposableSessionResult{}, errors.New("interrupted native process remains live")
+		}
+		return DisposableSessionResult{
+			Schema: SessionDriverSchema, Status: "no_data", Harness: opts.Harness,
+			Lifecycle:  "interrupted_after_benign",
+			Transition: &SessionTransition{Kind: "interrupt", BeforePID: identity.PID},
+		}, nil
+	}
+
+	var transition *SessionTransition
+	if scenario == "restart" {
+		restarted, err := runSessionArmAnyPID(encoder, decoder, "restart")
+		if err != nil {
+			return DisposableSessionResult{}, driverStepError(ctx, "restart", err, stderr.String())
+		}
+		if restarted.Status != "restarted" || restarted.NativePID <= 0 || restarted.NativePID == identity.PID {
+			return DisposableSessionResult{}, errors.New("restart response must name a distinct ready PID")
+		}
+		newIdentity, err := inspect(restarted.NativePID)
+		if err != nil {
+			return DisposableSessionResult{}, fmt.Errorf("inspect restarted native process: %w", err)
+		}
+		if !sameExecutable(newIdentity.Executable, expectedExecutable) {
+			return DisposableSessionResult{}, fmt.Errorf("restarted native executable = %q, want %q", newIdentity.Executable, expectedExecutable)
+		}
+		if current, err := inspect(identity.PID); err == nil && sameProcessIdentity(current, identity) {
+			return DisposableSessionResult{}, errors.New("restart left the prior native process live")
+		}
+		transition = &SessionTransition{Kind: "restart", BeforePID: identity.PID, AfterPID: newIdentity.PID}
+		identity = newIdentity
+		ready.NativePID = newIdentity.PID
+		benign, err = runSessionArm(encoder, decoder, "benign", ready.NativePID)
+		if err != nil {
+			return DisposableSessionResult{}, driverStepError(ctx, "post-restart benign", err, stderr.String())
+		}
+		if benign.Status != "reached" {
+			return DisposableSessionResult{}, fmt.Errorf("post-restart benign status = %q, want reached", benign.Status)
+		}
+		if err := requireSameProcess(identity, inspect); err != nil {
+			return DisposableSessionResult{}, fmt.Errorf("post-restart benign process identity: %w", err)
+		}
+	}
+
+	if scenario == "config-change" {
+		initialDeny, err := runSessionArm(encoder, decoder, "deny", ready.NativePID)
+		if err != nil {
+			return DisposableSessionResult{}, driverStepError(ctx, "pre-change deny", err, stderr.String())
+		}
+		if initialDeny.Status != "pretool_denied" || strings.TrimSpace(initialDeny.Reason) == "" {
+			return DisposableSessionResult{}, errors.New("pre-change deny must carry its reason")
+		}
+		changed, err := runSessionArm(encoder, decoder, "config_change", ready.NativePID)
+		if err != nil {
+			return DisposableSessionResult{}, driverStepError(ctx, "config change", err, stderr.String())
+		}
+		if changed.Status != "updated" || strings.TrimSpace(changed.Reason) == "" || changed.Reason == initialDeny.Reason {
+			return DisposableSessionResult{}, errors.New("config change must name a distinct expected deny reason")
+		}
+		transition = &SessionTransition{
+			Kind: "config_change", BeforePID: identity.PID, AfterPID: identity.PID,
+			BeforeReason: initialDeny.Reason, AfterReason: changed.Reason,
+		}
+		benign, err = runSessionArm(encoder, decoder, "benign", ready.NativePID)
+		if err != nil {
+			return DisposableSessionResult{}, driverStepError(ctx, "post-change benign", err, stderr.String())
+		}
+		if benign.Status != "reached" {
+			return DisposableSessionResult{}, fmt.Errorf("post-change benign status = %q, want reached", benign.Status)
+		}
+		if err := requireSameProcess(identity, inspect); err != nil {
+			return DisposableSessionResult{}, fmt.Errorf("post-change benign process identity: %w", err)
+		}
+	}
 
 	deny, err := runSessionArm(encoder, decoder, "deny", ready.NativePID)
 	if err != nil {
@@ -175,6 +280,9 @@ func RunDisposableSession(ctx context.Context, opts SessionDriverOptions) (Dispo
 	}
 	if deny.Status != "pretool_denied" || strings.TrimSpace(deny.Reason) == "" {
 		return DisposableSessionResult{}, errors.New("deny arm must be pretool_denied with a reason")
+	}
+	if transition != nil && transition.Kind == "config_change" && deny.Reason != transition.AfterReason {
+		return DisposableSessionResult{}, fmt.Errorf("post-change deny reason = %q, want %q", deny.Reason, transition.AfterReason)
 	}
 	if err := requireSameProcess(identity, inspect); err != nil {
 		return DisposableSessionResult{}, fmt.Errorf("deny arm process identity: %w", err)
@@ -199,20 +307,39 @@ func RunDisposableSession(ctx context.Context, opts SessionDriverOptions) (Dispo
 	waited = true
 	return DisposableSessionResult{
 		Schema: SessionDriverSchema, Status: "pass", Harness: opts.Harness,
-		Lifecycle: "closed_after_observation", Attestation: attestation,
+		Lifecycle: lifecycleForScenario(scenario), Transition: transition, Attestation: &attestation,
 	}, nil
 }
 
+func lifecycleForScenario(scenario string) string {
+	switch scenario {
+	case "restart":
+		return "restarted_then_closed"
+	case "config-change":
+		return "config_changed_then_closed"
+	default:
+		return "closed_after_observation"
+	}
+}
+
 func runSessionArm(encoder *json.Encoder, decoder *json.Decoder, arm string, pid int) (SessionDriverResponse, error) {
+	response, err := runSessionArmAnyPID(encoder, decoder, arm)
+	if err != nil {
+		return response, err
+	}
+	if response.NativePID != pid {
+		return SessionDriverResponse{}, fmt.Errorf("native PID changed from %d to %d", pid, response.NativePID)
+	}
+	return response, nil
+}
+
+func runSessionArmAnyPID(encoder *json.Encoder, decoder *json.Decoder, arm string) (SessionDriverResponse, error) {
 	if err := encoder.Encode(SessionDriverRequest{Schema: SessionDriverSchema, Arm: arm}); err != nil {
 		return SessionDriverResponse{}, err
 	}
 	response, err := readSessionResponse(decoder, arm)
 	if err != nil {
 		return SessionDriverResponse{}, err
-	}
-	if response.NativePID != pid {
-		return SessionDriverResponse{}, fmt.Errorf("native PID changed from %d to %d", pid, response.NativePID)
 	}
 	return response, nil
 }

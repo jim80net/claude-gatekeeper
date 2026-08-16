@@ -66,6 +66,7 @@ Source-only adapters can drive a real harness without borrowing live settings:
 ```text
 gatekeeper-walk drive-session \
   --harness <claude|codex|grok> \
+  --scenario <steady|interrupted|restart|config-change> \
   --driver /absolute/path/to/harness-driver \
   --expected-native-executable /absolute/path/to/native-harness \
   --output /path/to/session-result.json \
@@ -82,6 +83,15 @@ live values. The driver speaks newline-delimited JSON using schema
    `reached` and `pretool_denied` respectively (the deny requires its observed
    reason);
 3. accept `close` and terminate the disposable session.
+
+The optional lifecycle scenarios add explicit protocol arms. `interrupted`
+closes the native process after the benign arm and records `status=no_data`
+without manufacturing a firing attestation. `restart` requires a distinct new
+native PID, independently proves the prior process is gone, and records a fresh
+benign/deny pair only against the replacement. `config-change` requires one
+PID throughout, a distinct deny reason after rewriting the disposable policy,
+and a fresh benign/deny pair after the change. A reused restart PID or unchanged
+config reason is refused.
 
 The coordinator independently reads the reported PID identity before and after
 each arm and requires the OS-reported executable to equal the declared native
@@ -122,6 +132,6 @@ Use the corresponding harness/native executable for Codex or Grok. The adapter
 does not borrow authentication or configuration from the live roots erased by
 `drive-session`; a disposable session therefore needs separately supplied test
 authentication. No real harness session is claimed merely because the adapter
-compiles. Interrupted/restart/config-change sessions, Windows `run.ps1`, and
-runtime walks of all three adapters remain open Issue #70 work. Windows native
-identity is compile-covered, not run on Linux.
+compiles. Windows `run.ps1` posture and runtime walks of all three adapters
+remain open Issue #70 work. Windows native identity is compile-covered, not run
+on Linux.

@@ -60,7 +60,7 @@ func (c *nativeClient) initialize(workspace string) error {
 	}
 }
 
-func (c *nativeClient) runArm(command, arm string) error {
+func (c *nativeClient) runArm(command, arm, expectedDenyReason string) error {
 	message := prompt(command)
 	var events []map[string]any
 	switch c.harness {
@@ -128,7 +128,7 @@ func (c *nativeClient) runArm(command, arm string) error {
 		}
 		return nil
 	}
-	if !eventsContain(events, denyReason) {
+	if !eventsContain(events, expectedDenyReason) {
 		return errors.New("native event stream did not carry the isolated Gatekeeper deny reason")
 	}
 	return nil

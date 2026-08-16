@@ -37,6 +37,8 @@ func main() {
 	encoder := json.NewEncoder(os.Stdout)
 	decoder := json.NewDecoder(os.Stdin)
 	pid := os.Getpid()
+	currentPID := pid
+	denyReason := "fixture known-deny rule"
 	_ = encoder.Encode(response{Schema: schema, Arm: "ready", NativePID: pid, Status: "ready"})
 	for {
 		var req request
@@ -61,11 +63,25 @@ func main() {
 			if *mode == "pid_changed" {
 				responsePID++
 			}
-			reason := "fixture known-deny rule"
+			reason := denyReason
 			if *mode == "deny_reason_missing" {
 				reason = ""
 			}
 			_ = encoder.Encode(response{Schema: schema, Arm: req.Arm, NativePID: responsePID, Status: "pretool_denied", Reason: reason})
+		case "restart":
+			if *mode != "restart_same_pid" {
+				currentPID++
+			}
+			pid = currentPID
+			_ = encoder.Encode(response{Schema: schema, Arm: req.Arm, NativePID: pid, Status: "restarted"})
+		case "config_change":
+			if *mode != "config_same_reason" {
+				denyReason = "fixture known-deny rule after config change"
+			}
+			_ = encoder.Encode(response{Schema: schema, Arm: req.Arm, NativePID: pid, Status: "updated", Reason: denyReason})
+		case "interrupt":
+			_ = encoder.Encode(response{Schema: schema, Arm: req.Arm, NativePID: pid, Status: "interrupted"})
+			return
 		case "close":
 			return
 		default:

@@ -148,6 +148,7 @@ func runDriveSession(args []string) int {
 	harness := fs.String("harness", "", "claude, codex, or grok")
 	driver := fs.String("driver", "", "Absolute harness session-driver executable")
 	expectedExecutable := fs.String("expected-native-executable", "", "Absolute native harness executable expected at the reported PID")
+	scenario := fs.String("scenario", "steady", "Session lifecycle: steady, interrupted, restart, or config-change")
 	output := fs.String("output", "", "Session result JSON path")
 	timeout := fs.Duration("timeout", 2*time.Minute, "Maximum driver runtime")
 	if err := fs.Parse(args); err != nil {
@@ -162,7 +163,7 @@ func runDriveSession(args []string) int {
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 	result, err := walk.RunDisposableSession(ctx, walk.SessionDriverOptions{
-		Harness: *harness, Driver: *driver, ExpectedExecutable: *expectedExecutable, Args: fs.Args(),
+		Harness: *harness, Driver: *driver, ExpectedExecutable: *expectedExecutable, Scenario: *scenario, Args: fs.Args(),
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "drive-session:", err)
@@ -174,6 +175,9 @@ func runDriveSession(args []string) int {
 	}
 	if err := writeJSON(result); err != nil {
 		return 2
+	}
+	if result.Status == "no_data" {
+		return 1
 	}
 	return 0
 }

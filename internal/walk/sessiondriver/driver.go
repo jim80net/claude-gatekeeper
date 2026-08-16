@@ -23,6 +23,7 @@ const (
 	benignCommand = "printf GATEKEEPER_WALK_BENIGN"
 	denyCommand   = "printf GATEKEEPER_WALK_DENY"
 	denyReason    = "gatekeeper-walk isolated deny canary"
+	changedReason = "gatekeeper-walk isolated deny canary after config change"
 )
 
 type request struct {
@@ -74,10 +75,15 @@ func Run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 		fmt.Fprintln(stderr, "session-driver: start native harness:", err)
 		return 3
 	}
-	defer client.close()
+	defer func() {
+		if client != nil {
+			client.close()
+		}
+	}()
 	encoder := json.NewEncoder(stdout)
 	decoder := json.NewDecoder(stdin)
 	pid := client.pid()
+	currentDenyReason := denyReason
 	if err := encoder.Encode(response{Schema: schema, Arm: "ready", NativePID: pid, Status: "ready"}); err != nil {
 		return 4
 	}
@@ -93,7 +99,7 @@ func Run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 		}
 		switch req.Arm {
 		case "benign":
-			if err := client.runArm(benignCommand, "benign"); err != nil {
+			if err := client.runArm(benignCommand, "benign", ""); err != nil {
 				fmt.Fprintln(stderr, "session-driver: benign:", err)
 				return 5
 			}
@@ -101,13 +107,42 @@ func Run(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 				return 4
 			}
 		case "deny":
-			if err := client.runArm(denyCommand, "deny"); err != nil {
+			if err := client.runArm(denyCommand, "deny", currentDenyReason); err != nil {
 				fmt.Fprintln(stderr, "session-driver: deny:", err)
 				return 5
 			}
-			if err := encoder.Encode(response{Schema: schema, Arm: req.Arm, NativePID: pid, Status: "pretool_denied", Reason: denyReason}); err != nil {
+			if err := encoder.Encode(response{Schema: schema, Arm: req.Arm, NativePID: pid, Status: "pretool_denied", Reason: currentDenyReason}); err != nil {
 				return 4
 			}
+		case "config_change":
+			if err := writePolicy(changedReason); err != nil {
+				fmt.Fprintln(stderr, "session-driver: config change:", err)
+				return 5
+			}
+			currentDenyReason = changedReason
+			if err := encoder.Encode(response{Schema: schema, Arm: req.Arm, NativePID: pid, Status: "updated", Reason: currentDenyReason}); err != nil {
+				return 4
+			}
+		case "restart":
+			client.close()
+			restarted, err := startNative(opts, workspace, stderr)
+			if err != nil {
+				client = nil
+				fmt.Fprintln(stderr, "session-driver: restart native harness:", err)
+				return 5
+			}
+			client = restarted
+			pid = client.pid()
+			if err := encoder.Encode(response{Schema: schema, Arm: req.Arm, NativePID: pid, Status: "restarted"}); err != nil {
+				return 4
+			}
+		case "interrupt":
+			client.close()
+			client = nil
+			if err := encoder.Encode(response{Schema: schema, Arm: req.Arm, NativePID: pid, Status: "interrupted"}); err != nil {
+				return 4
+			}
+			return 0
 		case "close":
 			return 0
 		default:
@@ -186,7 +221,7 @@ func requireDisposableEnvironment() error {
 }
 
 func provision(opts options) error {
-	if err := writePolicy(); err != nil {
+	if err := writePolicy(denyReason); err != nil {
 		return err
 	}
 	if opts.harness == "codex" || opts.harness == "grok" {
@@ -300,14 +335,14 @@ func requireEmptyDirectory(path string) error {
 	return nil
 }
 
-func writePolicy() error {
+func writePolicy(reason string) error {
 	path := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "gatekeeper", "gatekeeper.toml")
 	policy := "on_error = \"deny\"\n\n" +
 		"[[rules]]\n" +
 		"tool = \"^Bash$\"\n" +
 		"input = \"^" + regexp.QuoteMeta(denyCommand) + "$\"\n" +
 		"decision = \"deny\"\n" +
-		"reason = \"" + denyReason + "\"\n"
+		"reason = \"" + reason + "\"\n"
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
