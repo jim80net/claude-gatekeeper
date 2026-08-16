@@ -72,6 +72,45 @@ func TestInstallCodexGlobal(t *testing.T) {
 	assertCodexHook(t, filepath.Join(homeDir, ".codex", "hooks.json"))
 }
 
+func TestInstallCodexGlobalHonorsSelectedCodexHome(t *testing.T) {
+	homeDir := t.TempDir()
+	codexHome := filepath.Join(t.TempDir(), "selected-codex")
+	t.Setenv("HOME", homeDir)
+	t.Setenv("CODEX_HOME", codexHome)
+
+	requireCodexTrustFailure(t, setup.InstallCodex("/usr/local/bin/gatekeeper", ""), "untrusted")
+
+	assertCodexHook(t, filepath.Join(codexHome, "hooks.json"))
+	if _, err := os.Stat(filepath.Join(homeDir, ".codex")); !os.IsNotExist(err) {
+		t.Fatalf("legacy Claude-named assumption created HOME/.codex: %v", err)
+	}
+}
+
+func TestInstallCodexTrustUsesSelectedCodexHome(t *testing.T) {
+	home := t.TempDir()
+	codexHome := filepath.Join(t.TempDir(), "selected-codex")
+	t.Setenv("HOME", home)
+	t.Setenv("CODEX_HOME", codexHome)
+	const binary = "/usr/local/bin/gatekeeper"
+	command := binary + " --harness codex"
+	hookPath := filepath.Join(codexHome, "hooks.json")
+
+	requireCodexTrustFailure(t, setup.InstallCodex(binary, ""), "untrusted")
+	trust, err := codextrust.InspectRoot(codexHome, hookPath, command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := `[hooks.state."` + trust.Key + `"]
+trusted_hash = "` + trust.CurrentHash + `"
+`
+	if err := os.WriteFile(filepath.Join(codexHome, "config.toml"), []byte(config), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := setup.InstallCodex(binary, ""); err != nil {
+		t.Fatalf("trusted selected CODEX_HOME install: %v", err)
+	}
+}
+
 // TestInstallCodexPreservesExisting confirms an existing non-gatekeeper hook in
 // .codex/hooks.json survives a gatekeeper install (merge, not clobber).
 func TestInstallCodexPreservesExisting(t *testing.T) {

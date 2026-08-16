@@ -97,8 +97,13 @@ subprocess. The source tree also provides `gatekeeper-walk-session-driver`, a
 real-harness adapter with distinct long-lived transports: Claude streaming
 JSON, Codex app-server JSON-RPC, and Grok ACP stdio. It refuses roots not marked
 and shaped as `gatekeeper-walk` disposable roots, writes an isolated canary
-policy and hook registration there, and requires native execution/deny events;
-an echoed prompt is not benign execution proof.
+policy, and requires native execution/deny events; an echoed prompt is not
+benign execution proof. Claude registration is written directly into its
+selected disposable root. Codex and Grok instead run the exact candidate's
+`setup` command as a first install, then verify that it selected CODEX_HOME or
+the Grok home surface without writing either Claude root. A fresh Codex setup's
+explicit untrusted exit is accepted only with its exact fail-closed diagnostic;
+the later disposable session still uses Codex's explicit trust bypass.
 
 Build the adapter and pass its absolute path to `drive-session`:
 
@@ -117,6 +122,6 @@ Use the corresponding harness/native executable for Codex or Grok. The adapter
 does not borrow authentication or configuration from the live roots erased by
 `drive-session`; a disposable session therefore needs separately supplied test
 authentication. No real harness session is claimed merely because the adapter
-compiles. Second-harness first-install flows, interrupted/restart/config-change
-sessions, Windows `run.ps1`, and runtime walks of all three adapters remain open
-Issue #70 work. Windows native identity is compile-covered, not run on Linux.
+compiles. Interrupted/restart/config-change sessions, Windows `run.ps1`, and
+runtime walks of all three adapters remain open Issue #70 work. Windows native
+identity is compile-covered, not run on Linux.

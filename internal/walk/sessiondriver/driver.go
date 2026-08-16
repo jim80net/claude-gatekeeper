@@ -42,6 +42,7 @@ type options struct {
 	harness    string
 	native     string
 	gatekeeper string
+	setup      func(options) error
 }
 
 // Run executes one adapter instance. It returns a process exit code.
@@ -188,21 +189,115 @@ func provision(opts options) error {
 	if err := writePolicy(); err != nil {
 		return err
 	}
-	command := hookCommand(opts.gatekeeper, opts.harness)
-	var path string
-	var value any
-	switch opts.harness {
-	case "claude":
-		path = filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "settings.json")
-		value = claudeHook(command)
-	case "codex":
-		path = filepath.Join(os.Getenv("CODEX_HOME"), "hooks.json")
-		value = claudeHook(command)
-	case "grok":
-		path = filepath.Join(os.Getenv("HOME"), ".grok", "hooks", "gatekeeper.json")
-		value = claudeHook(command)
+	if opts.harness == "codex" || opts.harness == "grok" {
+		installer := opts.setup
+		if installer == nil {
+			installer = runCandidateSetup
+		}
+		if err := installer(opts); err != nil {
+			return err
+		}
+		return verifySecondHarnessInstall(opts)
 	}
-	return writeJSON(path, value)
+	command := hookCommand(opts.gatekeeper, opts.harness)
+	path := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "settings.json")
+	return writeJSON(path, claudeHook(command))
+}
+
+func runCandidateSetup(opts options) error {
+	cmd := exec.Command(opts.gatekeeper, "setup", "--harness", opts.harness, "--binary", opts.gatekeeper)
+	output, err := cmd.CombinedOutput()
+	return candidateSetupResult(opts.harness, output, err)
+}
+
+func candidateSetupResult(harness string, output []byte, err error) error {
+	if err == nil {
+		return nil
+	}
+	// A fresh Codex hook is deliberately untrusted. Setup writes the hook and
+	// then exits nonzero so an operator cannot mistake static registration for
+	// enforcement. The disposable driver uses Codex's explicit trust bypass,
+	// but still requires this exact fail-closed newcomer result.
+	var exitErr interface{ ExitCode() int }
+	if harness == "codex" && errors.As(err, &exitErr) && exitErr.ExitCode() == 1 &&
+		strings.Contains(string(output), "Codex will silently skip it: untrusted") {
+		return nil
+	}
+	return fmt.Errorf("%s newcomer setup: %w: %s", harness, err, strings.TrimSpace(string(output)))
+}
+
+func verifySecondHarnessInstall(opts options) error {
+	var hookPath string
+	switch opts.harness {
+	case "codex":
+		hookPath = filepath.Join(os.Getenv("CODEX_HOME"), "hooks.json")
+	case "grok":
+		hookPath = filepath.Join(os.Getenv("HOME"), ".grok", "hooks", "gatekeeper.json")
+	default:
+		return fmt.Errorf("first-install verification is unsupported for %s", opts.harness)
+	}
+	data, err := os.ReadFile(hookPath)
+	if err != nil {
+		return fmt.Errorf("read %s newcomer hook: %w", opts.harness, err)
+	}
+	var hook any
+	if err := json.Unmarshal(data, &hook); err != nil {
+		return fmt.Errorf("parse %s newcomer hook: %w", opts.harness, err)
+	}
+	wantCommand := opts.gatekeeper + " --harness " + opts.harness
+	if !containsString(hook, wantCommand) {
+		return fmt.Errorf("%s newcomer hook omits exact candidate command %q", opts.harness, wantCommand)
+	}
+	if err := requireEmptyDirectory(os.Getenv("CLAUDE_CONFIG_DIR")); err != nil {
+		return fmt.Errorf("%s newcomer setup wrote the Claude selected root: %w", opts.harness, err)
+	}
+	legacyClaude := filepath.Join(os.Getenv("HOME"), ".claude")
+	if _, err := os.Stat(legacyClaude); err == nil || !os.IsNotExist(err) {
+		return fmt.Errorf("%s newcomer setup created legacy Claude root %s", opts.harness, legacyClaude)
+	}
+	if opts.harness == "codex" {
+		legacyCodex := filepath.Join(os.Getenv("HOME"), ".codex")
+		if filepath.Clean(legacyCodex) != filepath.Clean(os.Getenv("CODEX_HOME")) {
+			if _, err := os.Stat(legacyCodex); err == nil || !os.IsNotExist(err) {
+				return fmt.Errorf("Codex newcomer setup ignored CODEX_HOME and created %s", legacyCodex)
+			}
+		}
+	}
+	return nil
+}
+
+func containsString(value any, want string) bool {
+	switch value := value.(type) {
+	case string:
+		return value == want
+	case []any:
+		for _, child := range value {
+			if containsString(child, want) {
+				return true
+			}
+		}
+	case map[string]any:
+		for _, child := range value {
+			if containsString(child, want) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func requireEmptyDirectory(path string) error {
+	entries, err := os.ReadDir(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if len(entries) != 0 {
+		return fmt.Errorf("%s contains %d entries", path, len(entries))
+	}
+	return nil
 }
 
 func writePolicy() error {

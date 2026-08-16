@@ -1,11 +1,17 @@
 package sessiondriver
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+type setupExitError int
+
+func (e setupExitError) Error() string { return "setup failed" }
+func (e setupExitError) ExitCode() int { return int(e) }
 
 func TestNativeArgsAreHarnessSpecificLongLivedInterfaces(t *testing.T) {
 	checks := map[string][]string{
@@ -49,7 +55,19 @@ func TestProvisionWritesOnlyDisposableHarnessSurfaceAndPolicy(t *testing.T) {
 			if err := requireDisposableEnvironment(); err != nil {
 				t.Fatal(err)
 			}
-			if err := provision(options{harness: harness, gatekeeper: "/opt/candidate/claude-gatekeeper"}); err != nil {
+			opts := options{harness: harness, gatekeeper: "/opt/candidate/claude-gatekeeper"}
+			if harness == "codex" || harness == "grok" {
+				opts.setup = func(opts options) error {
+					var hookPath string
+					if opts.harness == "codex" {
+						hookPath = filepath.Join(os.Getenv("CODEX_HOME"), "hooks.json")
+					} else {
+						hookPath = filepath.Join(os.Getenv("HOME"), ".grok", "hooks", "gatekeeper.json")
+					}
+					return writeJSON(hookPath, claudeHook(opts.gatekeeper+" --harness "+opts.harness))
+				}
+			}
+			if err := provision(opts); err != nil {
 				t.Fatal(err)
 			}
 			policy, err := os.ReadFile(filepath.Join(root, "xdg", "config", "gatekeeper", "gatekeeper.toml"))
@@ -70,6 +88,86 @@ func TestProvisionWritesOnlyDisposableHarnessSurfaceAndPolicy(t *testing.T) {
 				t.Fatalf("hook=%q err=%v", hook, err)
 			}
 		})
+	}
+}
+
+func TestSecondHarnessNewcomerRejectsClaudeSurfaceWrite(t *testing.T) {
+	for _, harness := range []string{"codex", "grok"} {
+		t.Run(harness, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "gatekeeper-walk-session-test")
+			setDisposableEnvironment(t, root)
+			opts := options{harness: harness, gatekeeper: "/opt/candidate/claude-gatekeeper"}
+			opts.setup = func(opts options) error {
+				if err := os.WriteFile(filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), "settings.json"), []byte("{}"), 0600); err != nil {
+					return err
+				}
+				var hookPath string
+				if opts.harness == "codex" {
+					hookPath = filepath.Join(os.Getenv("CODEX_HOME"), "hooks.json")
+				} else {
+					hookPath = filepath.Join(os.Getenv("HOME"), ".grok", "hooks", "gatekeeper.json")
+				}
+				return writeJSON(hookPath, claudeHook(opts.gatekeeper+" --harness "+opts.harness))
+			}
+			if err := provision(opts); err == nil || !strings.Contains(err.Error(), "wrote the Claude selected root") {
+				t.Fatalf("provision error=%v, want Claude-root refusal", err)
+			}
+		})
+	}
+}
+
+func TestCodexNewcomerRejectsLegacyHomeRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "gatekeeper-walk-session-test")
+	setDisposableEnvironment(t, root)
+	opts := options{harness: "codex", gatekeeper: "/opt/candidate/claude-gatekeeper"}
+	opts.setup = func(opts options) error {
+		selected := filepath.Join(os.Getenv("CODEX_HOME"), "hooks.json")
+		if err := writeJSON(selected, claudeHook(opts.gatekeeper+" --harness codex")); err != nil {
+			return err
+		}
+		return os.MkdirAll(filepath.Join(os.Getenv("HOME"), ".codex"), 0700)
+	}
+	if err := provision(opts); err == nil || !strings.Contains(err.Error(), "ignored CODEX_HOME") {
+		t.Fatalf("provision error=%v, want CODEX_HOME refusal", err)
+	}
+}
+
+func TestCandidateSetupAcceptsOnlyExactCodexNewcomerFailure(t *testing.T) {
+	exact := []byte("Error: hook installed but Codex will silently skip it: untrusted; approve it")
+	if err := candidateSetupResult("codex", exact, setupExitError(1)); err != nil {
+		t.Fatalf("exact fail-closed newcomer result: %v", err)
+	}
+	for name, tc := range map[string]struct {
+		harness string
+		output  []byte
+		err     error
+	}{
+		"wrong harness": {harness: "grok", output: exact, err: setupExitError(1)},
+		"wrong status":  {harness: "codex", output: exact, err: setupExitError(2)},
+		"wrong reason":  {harness: "codex", output: []byte("untrusted"), err: setupExitError(1)},
+		"no exit code":  {harness: "codex", output: exact, err: errors.New("launch failed")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := candidateSetupResult(tc.harness, tc.output, tc.err); err == nil {
+				t.Fatal("ambiguous newcomer setup result was accepted")
+			}
+		})
+	}
+}
+
+func setDisposableEnvironment(t *testing.T, root string) {
+	t.Helper()
+	t.Setenv("HOME", filepath.Join(root, "home"))
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(root, "claude"))
+	t.Setenv("CODEX_HOME", filepath.Join(root, "codex"))
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "xdg", "config"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(root, "xdg", "cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(root, "xdg", "data"))
+	t.Setenv("GATEKEEPER_WALK_SCOPE", "disposable")
+	for _, path := range []string{os.Getenv("HOME"), os.Getenv("CLAUDE_CONFIG_DIR"), os.Getenv("CODEX_HOME"), os.Getenv("XDG_CONFIG_HOME"), os.Getenv("XDG_CACHE_HOME"), os.Getenv("XDG_DATA_HOME")} {
+		if err := os.MkdirAll(path, 0700); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

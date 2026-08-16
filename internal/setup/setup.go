@@ -155,7 +155,8 @@ func InstallGrok(binaryPath string) error {
 }
 
 // InstallCodex registers a codex PreToolUse hook. Codex reads BOTH a global
-// ~/.codex/hooks.json AND a project <projectDir>/.codex/hooks.json (verified
+// $CODEX_HOME/hooks.json (default ~/.codex/hooks.json) AND a project
+// <projectDir>/.codex/hooks.json (verified
 // live 2026-07-03, codex-cli 0.142.5), so:
 //   - projectDir == ""  -> writes the GLOBAL ~/.codex/hooks.json (preferred:
 //     one registration covers every project).
@@ -164,13 +165,13 @@ func InstallGrok(binaryPath string) error {
 // The structure is the Claude-shaped hooks config verified against a real
 // .codex/hooks.json and the codex binary's embedded schema.
 func InstallCodex(binaryPath, projectDir string) error {
+	codexRoot, err := codexConfigRoot()
+	if err != nil {
+		return err
+	}
 	var hookDir string
 	if projectDir == "" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("cannot determine home directory: %w", err)
-		}
-		hookDir = filepath.Join(homeDir, ".codex")
+		hookDir = codexRoot
 	} else {
 		absoluteProjectDir, err := filepath.Abs(projectDir)
 		if err != nil {
@@ -218,12 +219,8 @@ func InstallCodex(binaryPath, projectDir string) error {
 		return err
 	}
 	fmt.Fprintf(os.Stderr, "codex hook installed in %s\n", hookPath)
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("hook installed but cannot verify Codex trust: %w", err)
-	}
 	command := binaryPath + " --harness codex"
-	trust, err := codextrust.Inspect(homeDir, hookPath, command)
+	trust, err := codextrust.InspectRoot(codexRoot, hookPath, command)
 	if err != nil {
 		return fmt.Errorf("hook installed but Codex trust verification failed: %w", err)
 	}
@@ -236,6 +233,20 @@ func InstallCodex(binaryPath, projectDir string) error {
 	}
 	fmt.Fprintln(os.Stderr, "codex hook trust verified")
 	return nil
+}
+
+func codexConfigRoot() (string, error) {
+	if root := os.Getenv("CODEX_HOME"); root != "" {
+		if !filepath.IsAbs(root) {
+			return "", fmt.Errorf("CODEX_HOME must be an absolute path")
+		}
+		return filepath.Clean(root), nil
+	}
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("cannot determine home directory: %w", err)
+	}
+	return filepath.Join(homeDir, ".codex"), nil
 }
 
 // writeJSONFile atomically writes v as indented JSON to path.

@@ -53,6 +53,13 @@ type configFile struct {
 // Inspect finds command in hookPath and compares its normalized identity with
 // the trust state persisted in <home>/.codex/config.toml.
 func Inspect(home, hookPath, command string) (Status, error) {
+	return InspectRoot(filepath.Join(home, ".codex"), hookPath, command)
+}
+
+// InspectRoot finds command in hookPath and compares its normalized identity
+// with the trust state persisted in <codexRoot>/config.toml. Callers that honor
+// CODEX_HOME must use this form rather than reconstructing ~/.codex.
+func InspectRoot(codexRoot, hookPath, command string) (Status, error) {
 	data, err := os.ReadFile(hookPath)
 	if err != nil {
 		return Status{}, fmt.Errorf("read Codex hooks %s: %w", hookPath, err)
@@ -82,7 +89,7 @@ func Inspect(home, hookPath, command string) (Status, error) {
 			if err != nil {
 				return Status{}, err
 			}
-			cfgData, err := os.ReadFile(filepath.Join(home, ".codex", "config.toml"))
+			cfgData, err := os.ReadFile(filepath.Join(codexRoot, "config.toml"))
 			if err != nil && !os.IsNotExist(err) {
 				return Status{}, fmt.Errorf("read Codex config: %w", err)
 			}

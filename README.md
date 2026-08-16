@@ -39,14 +39,14 @@ Register the hook per harness:
 ```bash
 claude-gatekeeper setup --harness claude              # writes ~/.claude/settings.json (default)
 claude-gatekeeper setup --harness grok                # writes ~/.grok/hooks/gatekeeper.json
-claude-gatekeeper setup --harness codex               # writes ~/.codex/hooks.json (global; preferred)
+claude-gatekeeper setup --harness codex               # writes $CODEX_HOME/hooks.json (default ~/.codex; global)
 claude-gatekeeper setup --harness codex --project-dir .  # writes ./.codex/hooks.json (project-scoped)
 ```
 
 Codex silently skips user-installed hooks until their exact normalized identity
 has persisted trust. To prevent an apparently successful but inert install,
 Codex setup writes the hook and then verifies its matching `trusted_hash` in
-`~/.codex/config.toml`. A trusted hook exits successfully. A new hook or a hook
+`$CODEX_HOME/config.toml` (default `~/.codex/config.toml`). A trusted hook exits successfully. A new hook or a hook
 whose command/config changed exits nonzero with remediation: run `/hooks` in
 Codex, review and approve the installed hook, then rerun setup. Vetted non-interactive
 automation may instead launch Codex with `--dangerously-bypass-hook-trust`.
