@@ -1,3 +1,5 @@
+//go:build windows
+
 package main
 
 import (
@@ -8,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestRunScriptBootstrapFailurePostures(t *testing.T) {
+func TestPowerShellRunScriptBootstrapFailurePostures(t *testing.T) {
 	tests := []struct {
 		name        string
 		global      string
@@ -28,19 +30,25 @@ func TestRunScriptBootstrapFailurePostures(t *testing.T) {
 			root := t.TempDir()
 			project := filepath.Join(root, "project")
 			home := filepath.Join(root, "home")
-			fakeBin := filepath.Join(root, "fake-bin")
-			for _, dir := range []string{filepath.Join(root, "plugin", "bin"), project, filepath.Join(home, ".claude"), fakeBin} {
+			pluginBin := filepath.Join(root, "plugin", "bin")
+			for _, dir := range []string{pluginBin, project, filepath.Join(home, ".claude")} {
 				if err := os.MkdirAll(dir, 0755); err != nil {
 					t.Fatal(err)
 				}
 			}
-			runScript, err := os.ReadFile("../../bin/run.sh")
+			source, err := os.ReadFile("../../bin/run.ps1")
 			if err != nil {
 				t.Fatal(err)
 			}
-			writeExecutable(t, filepath.Join(root, "plugin", "bin", "run.sh"), string(runScript))
-			writeExecutable(t, filepath.Join(root, "plugin", "bin", "install.sh"), "#!/bin/sh\necho download-attempt >&2\nexit 1\n")
-			writeExecutable(t, filepath.Join(fakeBin, "go"), "#!/bin/sh\necho build-attempt >&2\nexit 1\n")
+			// Keep this runtime control local and deterministic: only the copied
+			// fixture URL changes, so recovery reaches the posture branch quickly.
+			fixture := strings.Replace(string(source),
+				`$Url = "https://github.com/$Repo/releases/latest/download/$Asset"`,
+				`$Url = "http://127.0.0.1:1/unavailable.zip"`, 1)
+			runScript := filepath.Join(pluginBin, "run.ps1")
+			if err := os.WriteFile(runScript, []byte(fixture), 0644); err != nil {
+				t.Fatal(err)
+			}
 			if tc.global != "" {
 				if err := os.WriteFile(filepath.Join(home, ".claude", "gatekeeper.toml"), []byte(tc.global+"\n"), 0644); err != nil {
 					t.Fatal(err)
@@ -55,9 +63,9 @@ func TestRunScriptBootstrapFailurePostures(t *testing.T) {
 				}
 			}
 
-			cmd := exec.Command(filepath.Join(root, "plugin", "bin", "run.sh"))
+			cmd := exec.Command("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", runScript)
 			cmd.Dir = project
-			cmd.Env = append(os.Environ(), "HOME="+home, "XDG_CONFIG_HOME="+filepath.Join(home, ".config"), "PATH="+fakeBin+":"+os.Getenv("PATH"))
+			cmd.Env = append(os.Environ(), "HOME="+home, "XDG_CONFIG_HOME="+filepath.Join(home, ".config"), "PATH="+filepath.Join(root, "empty-path"))
 			if tc.escape {
 				cmd.Env = append(cmd.Env, "GATEKEEPER_BOOTSTRAP_ABSTAIN=1")
 			}
@@ -66,49 +74,14 @@ func TestRunScriptBootstrapFailurePostures(t *testing.T) {
 			if exitErr, ok := runErr.(*exec.ExitError); ok {
 				gotExit = exitErr.ExitCode()
 			} else if runErr != nil {
-				t.Fatalf("run wrapper: %v", runErr)
+				t.Fatalf("run PowerShell wrapper: %v", runErr)
 			}
 			if gotExit != tc.wantExit {
 				t.Errorf("exit = %d, want %d; output:\n%s", gotExit, tc.wantExit, output)
 			}
-			for _, want := range []string{"download-attempt", "build-attempt", tc.wantPosture} {
-				if !strings.Contains(string(output), want) {
-					t.Errorf("output missing %q:\n%s", want, output)
-				}
-			}
-			if _, err := os.Stat(filepath.Join(root, "plugin", "bin", "claude-gatekeeper")); !os.IsNotExist(err) {
-				t.Fatalf("test unexpectedly produced binary: %v", err)
+			if !strings.Contains(string(output), tc.wantPosture) {
+				t.Errorf("output missing %q:\n%s", tc.wantPosture, output)
 			}
 		})
-	}
-}
-
-func TestPowerShellWrapperCarriesFailClosedBootstrapContract(t *testing.T) {
-	script, err := os.ReadFile("../../bin/run.ps1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	text := string(script)
-	for _, want := range []string{
-		`$BootstrapPosture = "deny"`,
-		`GATEKEEPER_BOOTSTRAP_ABSTAIN`,
-		`XDG_CONFIG_HOME`,
-		`.gatekeeper/gatekeeper.toml`,
-		`Blocking tool call because`,
-		`exit 2`,
-	} {
-		if !strings.Contains(text, want) {
-			t.Errorf("PowerShell wrapper omits %q", want)
-		}
-	}
-	if strings.Contains(text, "exit 0  # abstain rather than error") {
-		t.Fatal("PowerShell wrapper retains unconditional exhausted-recovery abstain")
-	}
-}
-
-func writeExecutable(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.WriteFile(path, []byte(content), 0755); err != nil {
-		t.Fatal(err)
 	}
 }

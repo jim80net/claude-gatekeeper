@@ -132,6 +132,8 @@ Use the corresponding harness/native executable for Codex or Grok. The adapter
 does not borrow authentication or configuration from the live roots erased by
 `drive-session`; a disposable session therefore needs separately supplied test
 authentication. No real harness session is claimed merely because the adapter
-compiles. Windows `run.ps1` posture and runtime walks of all three adapters
-remain open Issue #70 work. Windows native identity is compile-covered, not run
-on Linux.
+compiles. Windows `run.ps1` now carries the same exhausted-recovery posture
+matrix as the Unix wrapper: deny by default, honor the selected global/project
+`on_error`, and abstain only when configured or explicitly escaped. Its native
+runtime matrix is Windows-only; Linux gates compile it but do not claim it ran.
+Runtime walks of all three adapters remain open Issue #70 work.
