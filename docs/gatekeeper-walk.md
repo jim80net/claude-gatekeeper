@@ -93,8 +93,30 @@ closes the disposable session, later `verify-firing` correctly returns
 a replacement process.
 
 The repository fixture exercises the protocol and failure seams with a real
-subprocess. Harness-specific Claude, Codex, and Grok adapters, second-harness
-first-install flows, interrupted-session scenarios, and the Windows `run.ps1`
-driver remain the exact open Issue #70 source slices. Windows native identity is
-implemented and compile-covered here, but no Windows harness session was run.
-The protocol and fixture do not claim those sessions ran.
+subprocess. The source tree also provides `gatekeeper-walk-session-driver`, a
+real-harness adapter with distinct long-lived transports: Claude streaming
+JSON, Codex app-server JSON-RPC, and Grok ACP stdio. It refuses roots not marked
+and shaped as `gatekeeper-walk` disposable roots, writes an isolated canary
+policy and hook registration there, and requires native execution/deny events;
+an echoed prompt is not benign execution proof.
+
+Build the adapter and pass its absolute path to `drive-session`:
+
+```text
+gatekeeper-walk drive-session \
+  --harness claude \
+  --driver /absolute/path/to/gatekeeper-walk-session-driver \
+  --expected-native-executable /absolute/path/to/claude \
+  --output /path/to/session-result.json \
+  -- --harness claude \
+     --native-executable /absolute/path/to/claude \
+     --gatekeeper-executable /absolute/path/to/source-candidate
+```
+
+Use the corresponding harness/native executable for Codex or Grok. The adapter
+does not borrow authentication or configuration from the live roots erased by
+`drive-session`; a disposable session therefore needs separately supplied test
+authentication. No real harness session is claimed merely because the adapter
+compiles. Second-harness first-install flows, interrupted/restart/config-change
+sessions, Windows `run.ps1`, and runtime walks of all three adapters remain open
+Issue #70 work. Windows native identity is compile-covered, not run on Linux.
