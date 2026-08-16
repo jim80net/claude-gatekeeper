@@ -51,11 +51,13 @@ Recheck before citing the record:
 gatekeeper-walk verify-firing --attestation /path/to/attestation.json
 ```
 
-The record includes `/proc/<pid>/exe` and process start ticks. A dead or
-replaced process returns `no_data`, never a stale pass. This executable
-mechanizes evidence identity and expiry; it does not yet drive Claude, Codex,
-Grok, or Windows sessions itself. Issue #70 remains open for those real-harness
-drivers and failure-seam automation.
+The record binds the PID to its native executable and process start identity:
+Linux reads `/proc/<pid>/exe` plus start ticks, while Windows reads
+`QueryFullProcessImageNameW` plus the process creation time. A dead or replaced
+process returns `no_data`, never a stale pass. This executable mechanizes
+evidence identity and expiry; it does not yet drive Claude, Codex, or Grok
+sessions itself. Issue #70 remains open for those real-harness drivers and
+failure-seam automation.
 
 ## Disposable session-driver protocol
 
@@ -82,8 +84,9 @@ live values. The driver speaks newline-delimited JSON using schema
 3. accept `close` and terminate the disposable session.
 
 The coordinator independently reads the reported PID identity before and after
-each arm and requires `/proc/<pid>/exe` to equal the declared native harness
-executable. A changed PID, executable, or process start time refuses the result.
+each arm and requires the OS-reported executable to equal the declared native
+harness executable. A changed PID, executable, or process start time refuses
+the result.
 The saved record names `lifecycle=closed_after_observation`: because the driver
 closes the disposable session, later `verify-firing` correctly returns
 `no_data`; the record is exact historical walk evidence, not standing proof for
@@ -91,6 +94,7 @@ a replacement process.
 
 The repository fixture exercises the protocol and failure seams with a real
 subprocess. Harness-specific Claude, Codex, and Grok adapters, second-harness
-first-install flows, interrupted-session scenarios, and Windows process/wrapper
-coverage remain the exact open Issue #70 source slices. The protocol and fixture
-do not claim those sessions ran.
+first-install flows, interrupted-session scenarios, and the Windows `run.ps1`
+driver remain the exact open Issue #70 source slices. Windows native identity is
+implemented and compile-covered here, but no Windows harness session was run.
+The protocol and fixture do not claim those sessions ran.

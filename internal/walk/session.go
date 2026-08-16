@@ -148,13 +148,13 @@ func RunDisposableSession(ctx context.Context, opts SessionDriverOptions) (Dispo
 	}
 	inspect := opts.Inspect
 	if inspect == nil {
-		inspect = inspectLinuxProcess
+		inspect = inspectProcess
 	}
 	identity, err := inspect(ready.NativePID)
 	if err != nil {
 		return DisposableSessionResult{}, fmt.Errorf("inspect ready native process: %w", err)
 	}
-	if identity.Executable != expectedExecutable {
+	if !sameExecutable(identity.Executable, expectedExecutable) {
 		return DisposableSessionResult{}, fmt.Errorf("native executable = %q, want %q", identity.Executable, expectedExecutable)
 	}
 
@@ -233,7 +233,7 @@ func requireSameProcess(expected ProcessIdentity, inspect func(int) (ProcessIden
 	if err != nil {
 		return err
 	}
-	if current != expected {
+	if !sameProcessIdentity(current, expected) {
 		return fmt.Errorf("native process was replaced: expected %#v, got %#v", expected, current)
 	}
 	return nil

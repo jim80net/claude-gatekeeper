@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -70,7 +69,7 @@ func RecordFiring(opts FiringOptions) (FiringAttestation, error) {
 	}
 	inspect := opts.Inspect
 	if inspect == nil {
-		inspect = inspectLinuxProcess
+		inspect = inspectProcess
 	}
 	process, err := inspect(opts.PID)
 	if err != nil {
@@ -98,37 +97,16 @@ func VerifyFiring(attestation FiringAttestation, inspect func(int) (ProcessIdent
 		return AttestationVerification{Status: "invalid", Reason: "attestation contract is incomplete"}
 	}
 	if inspect == nil {
-		inspect = inspectLinuxProcess
+		inspect = inspectProcess
 	}
 	current, err := inspect(attestation.Process.PID)
 	if err != nil {
 		return AttestationVerification{Status: "no_data", Reason: "recorded process is no longer live: " + err.Error()}
 	}
-	if current.PID != attestation.Process.PID || current.Executable != attestation.Process.Executable || current.StartTicks != attestation.Process.StartTicks {
+	if !sameProcessIdentity(current, attestation.Process) {
 		return AttestationVerification{Status: "no_data", Reason: "recorded process was replaced", Process: current}
 	}
 	return AttestationVerification{Status: "pass", Reason: "recorded process identity still matches", Process: current}
-}
-
-func inspectLinuxProcess(pid int) (ProcessIdentity, error) {
-	proc := filepath.Join("/proc", strconv.Itoa(pid))
-	executable, err := os.Readlink(filepath.Join(proc, "exe"))
-	if err != nil {
-		return ProcessIdentity{}, err
-	}
-	stat, err := os.ReadFile(filepath.Join(proc, "stat"))
-	if err != nil {
-		return ProcessIdentity{}, err
-	}
-	closing := strings.LastIndexByte(string(stat), ')')
-	if closing < 0 {
-		return ProcessIdentity{}, errors.New("unrecognized /proc stat")
-	}
-	fields := strings.Fields(string(stat)[closing+1:])
-	if len(fields) <= 19 {
-		return ProcessIdentity{}, errors.New("short /proc stat")
-	}
-	return ProcessIdentity{PID: pid, Executable: executable, StartTicks: fields[19]}, nil
 }
 
 func WriteJSONFile(path string, value any) error {
