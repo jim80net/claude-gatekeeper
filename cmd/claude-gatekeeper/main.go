@@ -364,7 +364,7 @@ func runHook(stdin io.Reader, stdout io.Writer, ad adapter.Adapter, debug bool) 
 		// The full load could not be trusted; fall back to the global-only
 		// posture (which is Abstain if the global config is itself the problem).
 		if !override.Active {
-			onError = config.GlobalOnError()
+			onError = onErrorAfterLoadFailure()
 		}
 		return emit(stdout, ad, errVerdict(onError, "config load error"))
 	}
