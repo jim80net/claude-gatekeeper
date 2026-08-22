@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/jim80net/gatekeeper-claude/compare/v1.7.0...v1.7.1) (2026-08-22)
+
+
+### Bug Fixes
+
+* honor on_error=deny when Core 6086c496 rejects invalid rules at LoadFile ([#77](https://github.com/jim80net/gatekeeper-claude/issues/77)) ([3f8a386](https://github.com/jim80net/gatekeeper-claude/commit/3f8a386dedff470c9d25b62c324ea4c083263897))
+
 ## [1.7.0](https://github.com/jim80net/gatekeeper-claude/compare/v1.6.0...v1.7.0) (2026-08-04)
 
 
